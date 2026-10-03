@@ -1,0 +1,10 @@
+.venv/
+node_modules/
+frontend/dist/
+dist/
+build/work/
+build/release.env
+__pycache__/
+*.pyc
+.DS_Store
+.codegraph/

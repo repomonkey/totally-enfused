@@ -1,0 +1,223 @@
+import base64
+import os
+import struct
+import zlib
+from pathlib import Path
+from typing import Callable
+
+try:
+    from PIL import Image, ExifTags
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
+try:
+    import piexif
+    PIEXIF_AVAILABLE = True
+except ImportError:
+    PIEXIF_AVAILABLE = False
+
+SUPPORTED_EXTENSIONS = {
+    ".jpg", ".jpeg", ".tif", ".tiff", ".png",
+    ".cr2", ".cr3", ".nef", ".arw", ".orf", ".raf",
+    ".dng", ".rw2", ".pef", ".srw",
+}
+
+RAW_EXTENSIONS = {
+    ".cr2", ".cr3", ".nef", ".arw", ".orf", ".raf",
+    ".dng", ".rw2", ".pef", ".srw",
+}
+
+THUMBNAIL_SIZE = (200, 150)
+
+
+def is_supported(path: str) -> bool:
+    return Path(path).suffix.lower() in SUPPORTED_EXTENSIONS
+
+
+def is_raw(path: str) -> bool:
+    return Path(path).suffix.lower() in RAW_EXTENSIONS
+
+
+def get_thumbnail_b64(path: str) -> str:
+    """Return a base64-encoded JPEG thumbnail for display in the UI."""
+    if not PIL_AVAILABLE:
+        return _placeholder_b64()
+
+    try:
+        if is_raw(path):
+            return _thumbnail_from_raw(path)
+        img = Image.open(path)
+        img = _auto_orient(img)
+        img.thumbnail(THUMBNAIL_SIZE, Image.LANCZOS)
+        return _image_to_b64(img)
+    except Exception:
+        return _placeholder_b64()
+
+
+def get_preview_b64(path: str, max_size: tuple = (1200, 900)) -> str:
+    """Return a larger base64-encoded preview for the comparison view."""
+    if not PIL_AVAILABLE:
+        return _placeholder_b64()
+    try:
+        if is_raw(path):
+            return _preview_from_raw(path, max_size)
+        img = Image.open(path)
+        img = _auto_orient(img)
+        img.thumbnail(max_size, Image.LANCZOS)
+        return _image_to_b64(img)
+    except Exception:
+        return _placeholder_b64()
+
+
+def get_exif_ev(path: str) -> float | None:
+    """Return the exposure value from EXIF, or None if unavailable."""
+    if not PIL_AVAILABLE or not PIEXIF_AVAILABLE:
+        return None
+    try:
+        exif_data = piexif.load(path)
+        exif = exif_data.get("Exif", {})
+        exp_bias = exif.get(piexif.ExifIFD.ExposureBiasValue)
+        if exp_bias:
+            num, den = exp_bias
+            return num / den if den else None
+    except Exception:
+        pass
+    return None
+
+
+def get_image_info(path: str) -> dict:
+    """Return basic info about an image: dimensions, format, EV."""
+    info = {"path": path, "name": Path(path).name, "ev": None, "width": None, "height": None, "format": Path(path).suffix.lower()}
+    if PIL_AVAILABLE:
+        try:
+            with Image.open(path) as img:
+                info["width"], info["height"] = img.size
+        except Exception:
+            pass
+    info["ev"] = get_exif_ev(path)
+    return info
+
+
+def _auto_orient(img):
+    try:
+        exif = img._getexif()
+        if not exif:
+            return img
+        orientation_key = next((k for k, v in ExifTags.TAGS.items() if v == "Orientation"), None)
+        if orientation_key and orientation_key in exif:
+            orientation = exif[orientation_key]
+            rotations = {3: 180, 6: 270, 8: 90}
+            if orientation in rotations:
+                img = img.rotate(rotations[orientation], expand=True)
+    except Exception:
+        pass
+    return img
+
+
+def _thumbnail_from_raw(path: str) -> str:
+    try:
+        import rawpy
+        with rawpy.imread(path) as raw:
+            thumb = raw.extract_thumb()
+            if thumb.format == rawpy.ThumbFormat.JPEG:
+                from io import BytesIO
+                img = Image.open(BytesIO(thumb.data))
+                img.thumbnail(THUMBNAIL_SIZE, Image.LANCZOS)
+                return _image_to_b64(img)
+            elif thumb.format == rawpy.ThumbFormat.BITMAP:
+                img = Image.fromarray(thumb.data)
+                img.thumbnail(THUMBNAIL_SIZE, Image.LANCZOS)
+                return _image_to_b64(img)
+    except Exception:
+        pass
+    return _placeholder_b64()
+
+
+def _preview_from_raw(path: str, max_size: tuple) -> str:
+    try:
+        import rawpy
+        with rawpy.imread(path) as raw:
+            rgb = raw.postprocess(use_camera_wb=True, half_size=True, no_auto_bright=False)
+            img = Image.fromarray(rgb)
+            img.thumbnail(max_size, Image.LANCZOS)
+            return _image_to_b64(img)
+    except Exception:
+        pass
+    return _placeholder_b64()
+
+
+def _image_to_b64(img: "Image.Image") -> str:
+    from io import BytesIO
+    buf = BytesIO()
+    rgb = img.convert("RGB")
+    rgb.save(buf, format="JPEG", quality=85)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def _placeholder_b64() -> str:
+    """Return a tiny grey placeholder PNG as base64."""
+    w, h = 200, 150
+    png_data = _create_solid_png(w, h, (40, 40, 42))
+    return base64.b64encode(png_data).decode()
+
+
+def needs_raw_conversion(paths: list[str]) -> bool:
+    return any(is_raw(p) for p in paths)
+
+
+def convert_raws_to_tiff(
+    paths: list[str],
+    output_dir: str,
+    progress_callback: Callable[[int, str], None] | None = None,
+) -> list[str]:
+    """
+    Convert any RAW files in paths to 16-bit TIFF.
+    Non-RAW files are returned as-is.
+    Returns a list of paths in the same order (mix of original + converted).
+    """
+    results = []
+    total = len(paths)
+    for i, path in enumerate(paths):
+        if not is_raw(path):
+            results.append(path)
+            continue
+        stem = Path(path).stem
+        out_path = os.path.join(output_dir, f"{stem}_raw.tif")
+        if progress_callback:
+            progress_callback(int(i / total * 100), f"Converting {Path(path).name}…")
+        try:
+            import rawpy
+            with rawpy.imread(path) as raw:
+                rgb = raw.postprocess(
+                    use_camera_wb=True,
+                    output_bps=8,
+                    no_auto_bright=False,
+                    demosaic_algorithm=rawpy.DemosaicAlgorithm.AHD,
+                )
+            if PIL_AVAILABLE:
+                from PIL import Image as PILImage
+                img = PILImage.fromarray(rgb)
+                img.save(out_path, format="TIFF", compression="lzw")
+                results.append(out_path)
+            else:
+                raise RuntimeError("Pillow not available for TIFF export")
+        except Exception as e:
+            raise RuntimeError(f"Failed to convert {Path(path).name}: {e}") from e
+    if progress_callback:
+        progress_callback(100, "RAW conversion complete")
+    return results
+
+
+def _create_solid_png(width: int, height: int, color: tuple) -> bytes:
+    r, g, b = color
+    raw = bytes([0] + [r, g, b] * width) * height
+    def chunk(name: bytes, data: bytes) -> bytes:
+        c = zlib.crc32(name + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + name + data + struct.pack(">I", c)
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr_data = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    ihdr = chunk(b"IHDR", ihdr_data)
+    idat = chunk(b"IDAT", zlib.compress(raw))
+    iend = chunk(b"IEND", b"")
+    return sig + ihdr + idat + iend

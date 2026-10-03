@@ -11,7 +11,8 @@ The stack: Python backend (pywebview bridge + subprocess runners) with a Svelte 
 ## What Works
 
 ### Core pipeline
-- **RAW support** — Fujifilm RAF, Canon CR2/CR3, Nikon NEF, Sony ARW, Olympus ORF, DNG, RW2, PEF, SRW. rawpy decodes to 8-bit TIFF before passing to Hugin.
+- **RAW support** — Fujifilm RAF, Canon CR2/CR3, Nikon NEF, Sony ARW, Olympus ORF, DNG, RW2, PEF, SRW. rawpy decodes to 16-bit sRGB TIFF before passing to Hugin. One brightness factor (LibRaw's auto-brighten, measured on the frame nearest 0 EV) is applied to every frame, so the bracket spread survives conversion.
+- **Metadata** — EXIF and XMP are copied from the frame nearest 0 EV onto the output with exiftool, so editors see camera, lens and capture data. RAW-sourced outputs get an embedded sRGB profile. EV is read from RAW files through exiftool.
 - **Alignment** — three modes (translation, translation + rotation, full homography). 8×8 control point grid. Auto-crop. Wraps `align_image_stack` found at `/Applications/Hugin/tools_mac/align_image_stack`.
 - **Fusion** — exposure, saturation, and contrast weights; hard mask toggle; pyramid levels. Wraps `enfuse`. Parses progress output to drive the progress bar.
 - **Output** — TIFF (LZW), JPEG (quality 85), PNG. Output to same directory as input or user-chosen folder.
@@ -20,46 +21,31 @@ The stack: Python backend (pywebview bridge + subprocess runners) with a Svelte 
 - Before/after comparison slider with the first input image on the left and the blend result on the right.
 - Thumbnail strip with EV badge on each image. Click to select preview.
 - Collapsible right panel: Presets, Alignment, Fusion, Output sections.
-- Tool detection warning if enfuse/align_image_stack can't be found (with 1.5s retry for cold-start race).
+- Tool detection warning if enfuse/align_image_stack can't be found.
 - "Show in Finder" on the result.
 - Settings persistence (window size saved/restored across sessions).
 
 ### macOS integration
 - **Signed and notarized** — passes Gatekeeper (`spctl --assess` clean). Apple Developer ID: Andrew Hutchinson (PXUGHCDN9B).
-- **URL scheme** — `totallyenfused://blend?files=/path/1.raf,/path/2.raf` works from any app. Useful for calling from scripts or photo editors that support custom URL schemes.
+- **Open With / double-click / other apps** — handled by `application:openURLs:`, added to pywebview's app delegate with a PyObjC category. Works at launch and while the app is running, for one file or many.
+- **URL scheme** — `totallyenfused://blend?files=/path/1.raf,/path/2.raf` arrives through the same delegate method.
+- **Drag and drop** — drop files anywhere in the window. Paths come from pywebview's native drop hook (`pywebviewFullPath`), not the browser File API.
 - **DMG** — `dist/TotallyEnfused.dmg`, signed, drag-to-Applications layout with icon.
 - **Finder Quick Action** — `build/install_quick_action.sh` installs a right-click service that builds the URL and fires the app. Run once after installation.
 
 ---
 
-## What Doesn't Work
+## Fixed (October 2026)
 
-### "Open With" from Finder / DxO PhotoLab (ongoing)
+### "Open With" error
 
-The macOS error "Totally Enfused cannot open files in the 'Image' format" still appears when opening files via right-click → Open With or from DxO PhotoLab's export dialog.
+"Totally Enfused cannot open files in the 'Image' format" came from NSDocumentController. pywebview's `AppDelegate` (in `webview/platforms/cocoa.py`) implements no file-open method, so NSApplication fell back to the document system, which has no document class for us. Registering Apple Event handlers fought that fallback and lost. The fix adds `application:openURLs:` to pywebview's delegate class through `objc.Category` in `backend/file_handler.py`.
 
-**Root cause (understood, not fully fixed):**  
-When macOS dispatches an `odoc` (open document) Apple Event to a running Cocoa app, it goes through NSApplication's default handler, which routes to NSDocumentController. Because we're not an NSDocument-based app, NSDocumentController fails with that error. Our NSAppleEventManager handler should override this, but pywebview's `webview.start()` re-initialises NSApplication's Apple Event handlers, stomping ours.
+A second bug sat underneath it. Open events arrive on the main thread, and pywebview's `evaluate_js` blocks until the main thread runs the script, so emitting `files:open` inline deadlocked the app after the first open. Emits now go through a worker thread.
 
-**What's been tried:**
-1. Registering with NSAppleEventManager before `webview.start()` — overridden by NSApplication init.
-2. Re-registering from the `window.events.loaded` callback — should work in theory, runs on the right thread, but the error persists. Either pywebview re-installs the handler after `on_loaded`, or NSDocumentController is somehow involved before our re-registration takes effect.
-3. Setting an NSApplication delegate with `application:openFiles:` — pywebview sets its own delegate, ours doesn't stick.
-4. Disabling `argv_emulation=True` in the PyInstaller spec — removed the Carbon-level startup handler conflict, but the runtime issue remains.
+### Drag and drop
 
-**Workaround that works:** Use the URL scheme. `totallyenfused://blend?files=...` arrives via `kAEGetURL`, which is a different event class that NSApplication doesn't intercept. The URL handler works reliably for both single and multiple files. The Finder Quick Action uses this path.
-
-**Next angle to try:** Subclass NSApplication itself (via PyObjC) and override `sendEvent:` or install the Apple Event handler at the Carbon/AEManager level rather than through NSAppleEventManager's Objective-C bridge.
-
----
-
-### Drag and drop opens a file dialog instead of accepting the drop
-
-When files are dragged from Finder onto the app window, the DropZone component falls back to opening a native file picker dialog instead of reading the dropped paths directly.
-
-**Cause:** `file.path` is an Electron-only property. In pywebview's WKWebView, `DataTransfer` files have no `.path` — the standard Web File API gives you a sandboxed `File` object with no filesystem path. Detecting that `.path` is undefined and falling back to the dialog was a pragmatic fix but it's not drag and drop.
-
-**Fix needed:** pywebview exposes a `webview.windows[0].create_file_dialog()` but that's not useful here. The right approach is to handle the drop at the WKWebView/AppKit level — intercept `draggingEntered:` and `performDragOperation:` in a custom NSView subclass, extract the file paths from `NSPasteboard`, and forward them to Python via the existing `_send()` mechanism. This requires a small PyObjC shim attached to pywebview's content view.
+WKWebView's `File` objects carry no filesystem path, so the old drop zone opened a file dialog instead. pywebview records the paths natively when a drop listener is registered through its DOM API (`window.dom.document.events.drop`), and `register_drop_handler()` uses that.
 
 ---
 
@@ -81,7 +67,9 @@ bash build/release.sh
 bash build/install_quick_action.sh
 ```
 
-Credentials live in `build/release.sh` — Apple ID, Team ID, app-specific password, signing identity.
+Credentials live in `build/release.env` (gitignored): Apple ID, Team ID, app-specific password, signing identity. Moving them into the keychain with `xcrun notarytool store-credentials` would be safer still.
+
+Tests: `TE_SAMPLE_RAW=/path/to/file.raf .venv/bin/python -m pytest tests -q`
 
 ---
 

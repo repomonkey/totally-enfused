@@ -10,13 +10,5 @@
     <!-- Allow loading unsigned dylibs (pyobjc, rawpy's LibRaw) -->
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
-
-    <!-- Read access to user-selected files via NSOpenPanel -->
-    <key>com.apple.security.files.user-selected.read-only</key>
-    <true/>
-
-    <!-- Write access to user-selected output location -->
-    <key>com.apple.security.files.user-selected.read-write</key>
-    <true/>
 </dict>
 </plist>

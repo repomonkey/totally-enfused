@@ -184,7 +184,40 @@ def _auto_orient(img):
     return img
 
 
+def _apple_render(path: str, max_px: int):
+    """
+    Decode with macOS ImageIO (Apple's RAW engine) to a PIL image no larger than
+    max_px on the long edge, with orientation applied. Handles formats LibRaw's
+    build lacks, e.g. JPEG XL-compressed DNG 1.7 from Lightroom. None on failure.
+    """
+    try:
+        import Quartz
+        from Foundation import NSURL, NSMutableData
+        from io import BytesIO
+        src = Quartz.CGImageSourceCreateWithURL(NSURL.fileURLWithPath_(path), None)
+        if src is None:
+            return None
+        cg = Quartz.CGImageSourceCreateThumbnailAtIndex(src, 0, {
+            Quartz.kCGImageSourceCreateThumbnailFromImageAlways: True,
+            Quartz.kCGImageSourceCreateThumbnailWithTransform: True,
+            Quartz.kCGImageSourceThumbnailMaxPixelSize: max_px,
+        })
+        if cg is None:
+            return None
+        data = NSMutableData.data()
+        dest = Quartz.CGImageDestinationCreateWithData(data, "public.jpeg", 1, None)
+        Quartz.CGImageDestinationAddImage(dest, cg, None)
+        if not Quartz.CGImageDestinationFinalize(dest):
+            return None
+        return Image.open(BytesIO(bytes(data)))
+    except Exception:
+        return None
+
+
 def _thumbnail_from_raw(path: str) -> str:
+    img = _apple_render(path, max(THUMBNAIL_SIZE))
+    if img is not None:
+        return _image_to_b64(img)
     try:
         import rawpy
         with rawpy.imread(path) as raw:
@@ -204,6 +237,9 @@ def _thumbnail_from_raw(path: str) -> str:
 
 
 def _preview_from_raw(path: str, max_size: tuple) -> str:
+    img = _apple_render(path, max(max_size))
+    if img is not None:
+        return _image_to_b64(img)
     try:
         import rawpy
         with rawpy.imread(path) as raw:
@@ -255,7 +291,10 @@ def convert_raws_to_tiff(
 
     icc = srgb_icc_bytes()
     raws = [p for p in paths if is_raw(p)]
-    bright = _auto_bright_factor(reference_exposure(raws)) if raws else 1.0
+    try:
+        bright = _auto_bright_factor(reference_exposure(raws)) if raws else 1.0
+    except rawpy.LibRawError:
+        bright = 1.0  # reference isn't LibRaw-readable; those frames go through Core Image
     results = []
     total = len(paths)
     for i, path in enumerate(paths):
@@ -267,23 +306,54 @@ def convert_raws_to_tiff(
         if progress_callback:
             progress_callback(int(i / total * 100), f"Converting {Path(path).name}…")
         try:
-            with rawpy.imread(path) as raw:
-                rgb = raw.postprocess(
-                    use_camera_wb=True,
-                    no_auto_bright=True,
-                    bright=bright,
-                    output_bps=16,
-                    output_color=rawpy.ColorSpace.sRGB,
-                    demosaic_algorithm=rawpy.DemosaicAlgorithm.AHD,
-                )
-            # Uncompressed: these are temp files and libtiff in Hugin reads them fastest
-            tifffile.imwrite(out_path, rgb, photometric="rgb", iccprofile=icc)
+            try:
+                with rawpy.imread(path) as raw:
+                    rgb = raw.postprocess(
+                        use_camera_wb=True,
+                        no_auto_bright=True,
+                        bright=bright,
+                        output_bps=16,
+                        output_color=rawpy.ColorSpace.sRGB,
+                        demosaic_algorithm=rawpy.DemosaicAlgorithm.AHD,
+                    )
+            except rawpy.LibRawError:
+                # e.g. JPEG XL DNG: LibRaw opens it but can't unpack the data
+                _convert_raw_apple(path, out_path)
+            else:
+                # Uncompressed: these are temp files and libtiff in Hugin reads them fastest
+                tifffile.imwrite(out_path, rgb, photometric="rgb", iccprofile=icc)
             results.append(out_path)
         except Exception as e:
             raise RuntimeError(f"Failed to convert {Path(path).name}: {e}") from e
     if progress_callback:
         progress_callback(100, "RAW conversion complete")
     return results
+
+
+def _convert_raw_apple(path: str, out_path: str):
+    """
+    Render a RAW file with Core Image (CIRAWFilter) to a 16-bit sRGB TIFF.
+    Used for files LibRaw can't open. Apple's default rendering does not
+    auto-expose per frame, so bracket differences are preserved.
+    """
+    import Quartz
+    from Foundation import NSURL
+    import tifffile
+
+    raw_filter = Quartz.CIRAWFilter.filterWithImageURL_(NSURL.fileURLWithPath_(path))
+    image = raw_filter.outputImage() if raw_filter else None
+    if image is None:
+        raise RuntimeError("Core Image could not decode this file")
+    ctx = Quartz.CIContext.contextWithOptions_(None)
+    srgb = Quartz.CGColorSpaceCreateWithName(Quartz.kCGColorSpaceSRGB)
+    ok = ctx.writeTIFFRepresentationOfImage_toURL_format_colorSpace_options_error_(
+        image, NSURL.fileURLWithPath_(out_path), Quartz.kCIFormatRGBA16, srgb, {}, None)
+    if not ok:
+        raise RuntimeError("Core Image could not write the converted TIFF")
+    # Core Image may emit an alpha channel; Hugin would treat it as a mask
+    rgb = tifffile.imread(out_path)
+    if rgb.ndim == 3 and rgb.shape[2] == 4:
+        tifffile.imwrite(out_path, rgb[..., :3], photometric="rgb", iccprofile=srgb_icc_bytes())
 
 
 def _create_solid_png(width: int, height: int, color: tuple) -> bytes:

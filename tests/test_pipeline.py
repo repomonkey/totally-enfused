@@ -104,3 +104,18 @@ def test_reference_frame_keeps_normal_brightness(tmp_path):
     with rawpy.imread(SAMPLE_RAW) as raw:
         auto = raw.postprocess(use_camera_wb=True, output_bps=16).mean() / 65535
     assert abs(ours - auto) < 0.02
+
+
+SAMPLE_JXL_DNG = os.environ.get("TE_SAMPLE_JXL_DNG")
+
+
+@pytest.mark.skipif(not SAMPLE_JXL_DNG, reason="set TE_SAMPLE_JXL_DNG")
+def test_unsupported_by_libraw_falls_back_to_core_image(tmp_path):
+    """JPEG XL DNG 1.7 (Lightroom) isn't decodable by rawpy's LibRaw build."""
+    import tifffile
+    [out] = image_utils.convert_raws_to_tiff([SAMPLE_JXL_DNG], str(tmp_path))
+    with tifffile.TiffFile(out) as t:
+        page = t.pages[0]
+        assert page.dtype.name == "uint16"
+        assert page.samplesperpixel == 3
+    assert image_utils._apple_render(SAMPLE_JXL_DNG, 200) is not None

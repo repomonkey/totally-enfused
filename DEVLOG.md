@@ -12,6 +12,7 @@ The stack: Python backend (pywebview bridge + subprocess runners) with a Svelte 
 
 ### Core pipeline
 - **RAW support** — Fujifilm RAF, Canon CR2/CR3, Nikon NEF, Sony ARW, Olympus ORF, DNG, RW2, PEF, SRW. rawpy decodes to 16-bit sRGB TIFF before passing to Hugin. One brightness factor (LibRaw's auto-brighten, measured on the frame nearest 0 EV) is applied to every frame, so the bracket spread survives conversion.
+- **Core Image fallback** — files LibRaw can't decode (JPEG XL-compressed DNG 1.7 from Lightroom, for one) are rendered with Apple's RAW engine via `CIRAWFilter`. Thumbnails and previews use ImageIO first, which is faster and applies orientation. Tested end to end on a three-frame X-T4 bracket of JXL DNGs.
 - **Metadata** — EXIF and XMP are copied from the frame nearest 0 EV onto the output with exiftool, so editors see camera, lens and capture data. RAW-sourced outputs get an embedded sRGB profile. EV is read from RAW files through exiftool.
 - **Alignment** — three modes (translation, translation + rotation, full homography). 8×8 control point grid. Auto-crop. Wraps `align_image_stack` found at `/Applications/Hugin/tools_mac/align_image_stack`.
 - **Fusion** — exposure, saturation, and contrast weights; hard mask toggle; pyramid levels. Wraps `enfuse`. Parses progress output to drive the progress bar.

@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store'
+import { writable, derived, get } from 'svelte/store'
 
 export const images = writable([])
 // Each image: { path, name, thumbnail, preview, ev, width, height, loading }
@@ -41,6 +41,26 @@ export function updateImage(path, updates) {
   images.update(list => list.map(img => img.path === path ? { ...img, ...updates } : img))
 }
 
+const THUMB_CONCURRENCY = 4  // each pywebview call runs on its own Python thread
+
+async function loadOne(path) {
+  try {
+    const [info, thumb] = await Promise.all([
+      window.pywebview?.api?.get_image_info(path),
+      window.pywebview?.api?.get_thumbnail(path),
+    ])
+    updateImage(path, {
+      loading: false,
+      thumbnail: thumb ? `data:image/jpeg;base64,${thumb}` : null,
+      ev: info?.ev ?? null,
+      width: info?.width ?? null,
+      height: info?.height ?? null,
+    })
+  } catch {
+    updateImage(path, { loading: false })
+  }
+}
+
 export async function loadImagePaths(paths) {
   const initial = paths.map(path => ({
     path,
@@ -54,21 +74,24 @@ export async function loadImagePaths(paths) {
   }))
   addImages(initial)
 
-  for (const path of paths) {
-    try {
-      const [info, thumb] = await Promise.all([
-        window.pywebview?.api?.get_image_info(path),
-        window.pywebview?.api?.get_thumbnail(path),
-      ])
-      updateImage(path, {
-        loading: false,
-        thumbnail: thumb ? `data:image/jpeg;base64,${thumb}` : null,
-        ev: info?.ev ?? null,
-        width: info?.width ?? null,
-        height: info?.height ?? null,
-      })
-    } catch {
-      updateImage(path, { loading: false })
-    }
+  const queue = [...paths]
+  const worker = async () => { while (queue.length) await loadOne(queue.shift()) }
+  await Promise.all(Array.from({ length: Math.min(THUMB_CONCURRENCY, queue.length) }, worker))
+}
+
+// Full-size preview for the comparison view, fetched when an image is first
+// shown and cached on the image entry.
+const previewsInFlight = new Set()
+
+export async function ensurePreview(path) {
+  if (!path || previewsInFlight.has(path)) return
+  const img = get(images).find(i => i.path === path)
+  if (!img || img.preview) return
+  previewsInFlight.add(path)
+  try {
+    const b64 = await window.pywebview?.api?.get_preview(path)
+    if (b64) updateImage(path, { preview: `data:image/jpeg;base64,${b64}` })
+  } finally {
+    previewsInFlight.delete(path)
   }
 }

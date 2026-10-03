@@ -2,7 +2,7 @@
   import './styles/global.css'
 
   import { onMount } from 'svelte'
-  import { images, selectedImage, clearImages, loadImagePaths } from './stores/images.js'
+  import { images, selectedImage, clearImages, loadImagePaths, ensurePreview } from './stores/images.js'
   import { settings, loadSettings } from './stores/settings.js'
   import {
     processState, processProgress, processStage, processMessage,
@@ -78,6 +78,9 @@
       tools = await detectTools()
     }
   })
+
+  // Fetch the sharp preview whenever the selection changes (thumbnail shows meanwhile)
+  $effect(() => { ensurePreview($selectedImage?.path) })
 
   const beforeSrc = $derived($selectedImage?.preview ?? $selectedImage?.thumbnail ?? null)
   const afterSrc = $derived($processState === 'done' ? resultPreviewData : null)

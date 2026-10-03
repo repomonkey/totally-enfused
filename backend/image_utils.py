@@ -46,6 +46,9 @@ def get_thumbnail_b64(path: str) -> str:
     if not PIL_AVAILABLE:
         return _placeholder_b64()
 
+    img = _apple_render(path, max(THUMBNAIL_SIZE), embedded_ok=True)
+    if img is not None:
+        return _image_to_b64(img)
     try:
         if is_raw(path):
             return _thumbnail_from_raw(path)
@@ -57,10 +60,18 @@ def get_thumbnail_b64(path: str) -> str:
         return _placeholder_b64()
 
 
-def get_preview_b64(path: str, max_size: tuple = (1200, 900)) -> str:
-    """Return a larger base64-encoded preview for the comparison view."""
+def get_preview_b64(path: str, max_size: tuple = (2400, 2400)) -> str:
+    """Return a larger base64-encoded preview for the comparison view (sized for Retina)."""
     if not PIL_AVAILABLE:
         return _placeholder_b64()
+    # ImageIO first: fast, orientation-aware, handles 16-bit/alpha TIFFs and most RAW.
+    # The file's embedded preview is near-instant; use it if it's big enough to be sharp.
+    target = max(max_size)
+    img = _apple_render(path, target, embedded_ok=True)
+    if img is None or max(img.size) < target * 2 // 3:
+        img = _apple_render(path, target) or img
+    if img is not None:
+        return _image_to_b64(img)
     try:
         if is_raw(path):
             return _preview_from_raw(path, max_size)
@@ -184,7 +195,7 @@ def _auto_orient(img):
     return img
 
 
-def _apple_render(path: str, max_px: int):
+def _apple_render(path: str, max_px: int, embedded_ok: bool = False):
     """
     Decode with macOS ImageIO (Apple's RAW engine) to a PIL image no larger than
     max_px on the long edge, with orientation applied. Handles formats LibRaw's
@@ -198,7 +209,9 @@ def _apple_render(path: str, max_px: int):
         if src is None:
             return None
         cg = Quartz.CGImageSourceCreateThumbnailAtIndex(src, 0, {
-            Quartz.kCGImageSourceCreateThumbnailFromImageAlways: True,
+            # embedded_ok: use the file's own preview when present (fast, for thumbnails)
+            (Quartz.kCGImageSourceCreateThumbnailFromImageIfAbsent if embedded_ok
+             else Quartz.kCGImageSourceCreateThumbnailFromImageAlways): True,
             Quartz.kCGImageSourceCreateThumbnailWithTransform: True,
             Quartz.kCGImageSourceThumbnailMaxPixelSize: max_px,
         })
@@ -215,9 +228,6 @@ def _apple_render(path: str, max_px: int):
 
 
 def _thumbnail_from_raw(path: str) -> str:
-    img = _apple_render(path, max(THUMBNAIL_SIZE))
-    if img is not None:
-        return _image_to_b64(img)
     try:
         import rawpy
         with rawpy.imread(path) as raw:
@@ -237,9 +247,6 @@ def _thumbnail_from_raw(path: str) -> str:
 
 
 def _preview_from_raw(path: str, max_size: tuple) -> str:
-    img = _apple_render(path, max(max_size))
-    if img is not None:
-        return _image_to_b64(img)
     try:
         import rawpy
         with rawpy.imread(path) as raw:

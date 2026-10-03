@@ -28,8 +28,8 @@ def _emit(event: str, payload: dict):
     """Send an event to the frontend via JS evaluation."""
     if _window:
         import json
-        data = json.dumps(payload).replace("\\", "\\\\").replace("'", "\\'")
-        _window.evaluate_js(f"window.__te_event('{event}', JSON.parse('{data}'))")
+        # Double-encode: the inner dumps is the payload, the outer makes it a safe JS string literal
+        _window.evaluate_js(f"window.__te_event({json.dumps(event)}, JSON.parse({json.dumps(json.dumps(payload))}))")
 
 
 class API:
@@ -133,6 +133,7 @@ class API:
         return True
 
     def _run_process(self, params: dict):
+        tmp_dir = None
         try:
             input_paths = params["input_paths"]
             output_path = params["output_path"]
@@ -194,6 +195,13 @@ class API:
                 levels=params.get("levels", 29),
                 progress_callback=enfuse_progress,
             )
+
+            _emit("process:progress", {"pct": 99, "message": "Copying metadata…"})
+            icc_path = None
+            if has_raw:
+                icc_path = os.path.join(tmp_dir, "sRGB.icc")
+                Path(icc_path).write_bytes(image_utils.srgb_icc_bytes())
+            image_utils.copy_metadata(image_utils.reference_exposure(input_paths), result_path, icc_path)
 
             preview = image_utils.get_preview_b64(result_path)
             _emit("process:complete", {"output_path": result_path, "preview": preview})

@@ -79,6 +79,10 @@ create-dmg \
 
 codesign --sign "$SIGN_IDENTITY" "$DMG"
 
+echo "==> Notarizing DMG"
+xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+xcrun stapler staple "$DMG"
+
 echo ""
 echo "✓ Done: $DMG"
 echo "  Distribute this file — users just drag to /Applications."

@@ -10,13 +10,16 @@
 # ============================================================
 set -euo pipefail
 
-# Credentials live in build/release.env (gitignored):
-#   APPLE_ID, TEAM_ID, SIGN_IDENTITY, APP_PASSWORD
+# build/release.env (gitignored) sets SIGN_IDENTITY and NOTARY_PROFILE.
+# The notarisation password lives in the keychain, stored once with:
+#   xcrun notarytool store-credentials TotallyEnfused --apple-id <id> --team-id <team>
 source "$(dirname "$0")/release.env"
+NOTARY_PROFILE="${NOTARY_PROFILE:-TotallyEnfused}"
 
 # ── Validate ────────────────────────────────────────────────
-if [[ -z "$TEAM_ID" || -z "$APP_PASSWORD" ]]; then
-  echo "ERROR: Set TEAM_ID and APP_PASSWORD in this script before running."
+if ! xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
+  echo "ERROR: keychain profile '$NOTARY_PROFILE' missing or rejected by Apple. Run:"
+  echo "  xcrun notarytool store-credentials $NOTARY_PROFILE --apple-id <id> --team-id <team>"
   exit 1
 fi
 
@@ -52,9 +55,7 @@ ditto -c -k --keepParent "Totally Enfused.app" TotallyEnfused_notarize.zip
 
 echo "==> Submitting to Apple Notarization (this takes a few minutes)"
 xcrun notarytool submit TotallyEnfused_notarize.zip \
-  --apple-id "$APPLE_ID" \
-  --team-id "$TEAM_ID" \
-  --password "$APP_PASSWORD" \
+  --keychain-profile "$NOTARY_PROFILE" \
   --wait
 
 echo "==> Stapling notarization ticket"

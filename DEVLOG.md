@@ -68,7 +68,7 @@ bash build/release.sh
 bash build/install_quick_action.sh
 ```
 
-Credentials live in `build/release.env` (gitignored): Apple ID, Team ID, app-specific password, signing identity. Moving them into the keychain with `xcrun notarytool store-credentials` would be safer still.
+The notarisation password is stored in the keychain profile `TotallyEnfused` (`xcrun notarytool store-credentials`). `build/release.env` (gitignored) holds the signing identity and profile name.
 
 Tests: `TE_SAMPLE_RAW=/path/to/file.raf .venv/bin/python -m pytest tests -q`
 

@@ -6,25 +6,6 @@
   let dragging = $state(false)
   let dragCounter = 0
 
-  const SUPPORTED = new Set([
-    'image/jpeg', 'image/tiff', 'image/png',
-  ])
-  const SUPPORTED_EXT = /\.(jpg|jpeg|tif|tiff|png|cr2|cr3|nef|arw|orf|raf|dng|rw2|pef|srw)$/i
-
-  async function processFiles(files) {
-    // file.path is Electron-only; pywebview/WKWebView never has it.
-    // Fall back to the native file dialog so Python returns real OS paths.
-    const hasPath = files.length > 0 && !!files[0].path
-    if (hasPath) {
-      const paths = Array.from(files)
-        .filter(f => f.path && SUPPORTED_EXT.test(f.name))
-        .map(f => f.path)
-      if (paths.length) { onFilesAdded?.(); await loadImagePaths(paths) }
-    } else {
-      await openDialog()
-    }
-  }
-
   function onDragEnter(e) {
     e.preventDefault()
     dragCounter++
@@ -41,12 +22,13 @@
     e.preventDefault()
   }
 
-  async function onDrop(e) {
+  // Paths are delivered by Python (pywebview's native drop hook → files:open);
+  // WKWebView's File objects don't carry filesystem paths.
+  function onDrop(e) {
     e.preventDefault()
     dragging = false
     dragCounter = 0
-    const files = Array.from(e.dataTransfer.files)
-    await processFiles(files)
+    onFilesAdded?.()
   }
 
   async function openDialog() {

@@ -12,8 +12,8 @@ import webview
 from backend.api import API, set_window, _emit
 from backend import settings as settings_mod
 from backend.file_handler import (
-    get_startup_files, register_url_handler, register_open_docs_handler,
-    reinstall_odoc_handler, drain_pending, set_emit,
+    get_startup_files, install_open_handler, register_drop_handler,
+    drain_pending, set_emit,
 )
 
 
@@ -38,12 +38,11 @@ def main():
     # Wire up the file-open emit function
     set_emit(_emit)
 
-    # Collect any files passed as direct CLI arguments (edge-case; main path is odoc)
+    # Files passed as direct CLI arguments
     startup_files = get_startup_files()
 
-    # Register handlers (macOS only, no-ops elsewhere)
-    _url_handler = register_url_handler()            # totallyenfused:// URL scheme
-    _open_docs_handler = register_open_docs_handler()  # odoc / 'Open With' / Finder
+    # Open With / double-click / URL scheme (macOS only, no-op elsewhere)
+    install_open_handler()
 
     width = int(s.get("window_width") or 1280)
     height = int(s.get("window_height") or 800)
@@ -62,25 +61,16 @@ def main():
 
     def on_loaded():
         """Send startup files to the frontend once the JS bridge is ready."""
-        # Re-register odoc handler now that NSApplication is fully initialised.
-        # webview.start() installs NSApplication's default odoc handler (NSDocumentController)
-        # which overrides our pre-registered one; doing it here ensures ours wins.
-        reinstall_odoc_handler()
-        # CLI args (direct launch with file paths)
+        register_drop_handler(window)
         if startup_files:
             _emit('files:open', {'paths': startup_files})
-        # odoc events that arrived before the window was ready
-        drain_pending()
+        drain_pending()  # files opened during launch
 
     def on_closed():
-        try:
-            w = window.gui.get_size(window.uid)
-            if w and w[0] and w[1]:
-                s["window_width"] = int(w[0])
-                s["window_height"] = int(w[1])
-                settings_mod.save(s)
-        except Exception:
-            pass
+        if window.width and window.height:
+            s["window_width"] = int(window.width)
+            s["window_height"] = int(window.height)
+            settings_mod.save(s)
 
     window.events.loaded += on_loaded
     window.events.closed += on_closed

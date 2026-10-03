@@ -54,6 +54,11 @@
   }
 
   onMount(async () => {
+    // Accept file drops anywhere in the window; Python delivers the paths.
+    // Without this, WKWebView navigates to a file dropped outside the drop zone.
+    document.addEventListener('dragover', e => e.preventDefault())
+    document.addEventListener('drop', e => e.preventDefault())
+
     await loadSettings()
     // Poll until pywebview bridge is ready
     const ready = () => !!window.pywebview?.api

@@ -17,7 +17,7 @@
   </svg>
   <div class="text">
     <strong>{missing.join(', ')} not found.</strong>
-    Install via Homebrew: <code>brew install hugin enblend-enfuse</code>
+    The bundled tools need macOS 27 or later. On older systems, install Hugin from <code>hugin.sourceforge.io</code>.
   </div>
 </div>
 {/if}

@@ -92,7 +92,7 @@ app = BUNDLE(
         'CFBundleDisplayName': 'Totally Enfused',
         'CFBundleShortVersionString': '1.0.0',
         'CFBundleVersion': '1',
-        'LSMinimumSystemVersion': '12.0',
+        'LSMinimumSystemVersion': '26.0',  # bundled Homebrew Python requires macOS 26
         'LSApplicationCategoryType': 'public.app-category.photography',
 
         # URL scheme: totallyenfused://blend?files=...

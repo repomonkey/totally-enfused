@@ -1,33 +1,13 @@
 import subprocess
-import shutil
 import os
 from pathlib import Path
 from typing import Callable
 
+from .tools import find_tool
+
 
 def find_enfuse() -> str | None:
-    candidates = [
-        "enfuse",
-        "/opt/homebrew/bin/enfuse",
-        "/usr/local/bin/enfuse",
-        "/usr/bin/enfuse",
-        "/Applications/Hugin/tools_mac/enfuse",
-        "/Applications/Hugin/HuginTools/enfuse",
-        "/Applications/Hugin/PTBatcherGUI.app/Contents/MacOS/enfuse",
-        "/Applications/Hugin/HuginStitchProject.app/Contents/MacOS/enfuse",
-    ]
-    for c in candidates:
-        found = _find_binary(c)
-        if found:
-            return found
-    return None
-
-
-def _find_binary(name: str) -> str | None:
-    """Locate a binary by absolute path or name — works inside PyInstaller bundles."""
-    if os.path.isabs(name):
-        return name if os.path.isfile(name) and os.access(name, os.X_OK) else None
-    return shutil.which(name)
+    return find_tool("enfuse")
 
 
 def blend(
@@ -49,9 +29,8 @@ def blend(
     binary = find_enfuse()
     if not binary:
         raise RuntimeError(
-            "enfuse not found. Install via:\n"
-            "  brew install enblend-enfuse\n"
-            "or download Hugin from https://hugin.sourceforge.io/"
+            "enfuse not found. The bundled copy needs macOS 27 or later; on older "
+            "systems install Hugin from https://hugin.sourceforge.io/"
         )
 
     out_path = Path(output_path)

@@ -4,9 +4,9 @@
 # Usage: ./build/release.sh
 #
 # Prerequisites:
+#   build/build_hugin_tools.sh has produced vendor/bundle
 #   brew install create-dmg
 #   pip install pyinstaller (in .venv)
-#   Set the three variables below.
 # ============================================================
 set -euo pipefail
 
@@ -38,6 +38,22 @@ echo "==> Running PyInstaller"
   --distpath "$DIST" \
   --workpath "$ROOT/build/work" \
   --noconfirm
+
+echo "==> Adding native Hugin tools"
+B="$ROOT/vendor/bundle"
+if [[ ! -x "$B/Helpers/enfuse" || ! -x "$B/Helpers/align_image_stack" ]]; then
+  echo "ERROR: vendor/bundle missing — run build/build_hugin_tools.sh first"
+  exit 1
+fi
+mkdir -p "$APP/Contents/Helpers" "$APP/Contents/Frameworks/hugin-libs" "$APP/Contents/Resources/ThirdParty"
+cp "$B/Helpers/"* "$APP/Contents/Helpers/"
+cp "$B/Frameworks/hugin-libs/"* "$APP/Contents/Frameworks/hugin-libs/"
+cp -R "$B/licenses/"* "$APP/Contents/Resources/ThirdParty/"
+
+echo "==> Signing Hugin tools (libraries first, then executables)"
+for f in "$APP/Contents/Frameworks/hugin-libs/"*.dylib "$APP/Contents/Helpers/"*; do
+  codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$f"
+done
 
 echo "==> Signing app (deep, hardened runtime)"
 codesign --deep --force --options runtime \

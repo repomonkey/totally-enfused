@@ -1,9 +1,10 @@
 import subprocess
-import shutil
 import tempfile
 import os
 from pathlib import Path
 from typing import Callable
+
+from .tools import find_tool
 
 # Extra optimisation flags per mode.
 # -m  = optimise FoV  -d = radial distortion  -i = image centre shift
@@ -15,28 +16,7 @@ ALIGN_MODE_ARGS = {
 
 
 def find_align_image_stack() -> str | None:
-    candidates = [
-        "align_image_stack",
-        "/opt/homebrew/bin/align_image_stack",
-        "/usr/local/bin/align_image_stack",
-        "/usr/bin/align_image_stack",
-        "/Applications/Hugin/tools_mac/align_image_stack",
-        "/Applications/Hugin/HuginTools/align_image_stack",
-        "/Applications/Hugin/Hugin.app/Contents/MacOS/align_image_stack",
-        "/Applications/Hugin/PTBatcherGUI.app/Contents/MacOS/align_image_stack",
-    ]
-    for c in candidates:
-        found = _find_binary(c)
-        if found:
-            return found
-    return None
-
-
-def _find_binary(name: str) -> str | None:
-    """Locate a binary by absolute path or name — works inside PyInstaller bundles."""
-    if os.path.isabs(name):
-        return name if os.path.isfile(name) and os.access(name, os.X_OK) else None
-    return shutil.which(name)
+    return find_tool("align_image_stack")
 
 
 def align(
@@ -55,9 +35,8 @@ def align(
     binary = find_align_image_stack()
     if not binary:
         raise RuntimeError(
-            "align_image_stack not found. Install Hugin via:\n"
-            "  brew install hugin\n"
-            "or download from https://hugin.sourceforge.io/"
+            "align_image_stack not found. The bundled copy needs macOS 27 or later; on older "
+            "systems install Hugin from https://hugin.sourceforge.io/"
         )
 
     ext = Path(input_paths[0]).suffix.lower()

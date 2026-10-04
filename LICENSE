@@ -20,8 +20,3 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
----
-
-This licence covers the Totally Enfused source code in this repository. The
-enfuse and align_image_stack programs bundled with the macOS app are separate
-works under their own licences (GPL); see build/THIRD_PARTY_NOTICES.md.

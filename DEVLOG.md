@@ -18,6 +18,12 @@ The stack: Python backend (pywebview bridge + subprocess runners) with a Svelte 
 - **Fusion** — exposure, saturation, and contrast weights; hard mask toggle; pyramid levels. Wraps `enfuse`. Parses progress output to drive the progress bar.
 - **Output** — TIFF (LZW), JPEG (quality 85), PNG. Output to same directory as input or user-chosen folder.
 
+### Batch mode
+- Switch with Single / Batch in the header, or drop or open a folder (scanned recursively).
+- Sets are grouped from one exiftool read of capture time, shutter, aperture, ISO and EV: a pause after the previous exposure ends, or a repeated exposure level, starts a new set; sets never span folders. "Frames per set" overrides detection. Lone frames are listed as skipped, and earlier results (tagged `Software=Totally Enfused`) are ignored.
+- Each set is listed with thumbnails, EVs and a checkbox; sets run in sequence with per-set progress, a result thumbnail and Show in Finder. Cancel stops the running align/enfuse process and removes any partial output.
+- Grouping logic lives in `backend/batch.py`; single and batch both run through `run_pipeline()` in `backend/api.py`.
+
 ### UI
 - Before/after comparison slider with the first input image on the left and the blend result on the right.
 - Thumbnail strip with EV badge on each image. Click to select preview.

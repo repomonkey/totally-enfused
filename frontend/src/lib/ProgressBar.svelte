@@ -1,7 +1,7 @@
 <script>
   import {
     processState, processProgress, processMessage,
-    processError, resultPath, isRunning, isDone
+    processError, resultPath, isRunning, isDone, doneMessage
   } from '../stores/process.js'
 
   async function revealInFinder() {
@@ -23,8 +23,14 @@
       <svg class="icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 8l3.5 3.5L13 5"/>
       </svg>
-      <span class="message">Done — {$resultPath.split('/').pop()}</span>
-      <button class="reveal-btn" onclick={revealInFinder}>Show in Finder</button>
+      <span class="message">{$doneMessage || `Done — ${$resultPath.split('/').pop()}`}</span>
+      {#if $resultPath}
+        <button class="reveal-btn" onclick={revealInFinder}>Show in Finder</button>
+      {/if}
+    </div>
+  {:else if $processState === 'cancelled'}
+    <div class="bar-row">
+      <span class="message">Cancelled{$doneMessage ? ` — ${$doneMessage}` : ''}</span>
     </div>
   {:else}
     <div class="bar-row">

@@ -38,7 +38,9 @@ def blend(
     contrast_weight: float = 0.0,
     hard_mask: bool = False,
     levels: int = 29,
+    jpeg_quality: int = 85,
     progress_callback: Callable[[int, str], None] | None = None,
+    on_process: Callable[[subprocess.Popen], None] | None = None,
 ) -> str:
     """
     Run enfuse to blend input images into output_path.
@@ -64,7 +66,7 @@ def blend(
         cmd += ["--hard-mask"]
 
     if out_ext in {".jpg", ".jpeg"}:
-        cmd += ["--compression=85"]
+        cmd += [f"--compression={int(jpeg_quality)}"]
     elif out_ext in {".tif", ".tiff"}:
         cmd += ["--compression=lzw"]
 
@@ -80,6 +82,8 @@ def blend(
         stderr=subprocess.STDOUT,
         text=True,
     )
+    if on_process:
+        on_process(process)  # lets the caller terminate it on cancel
 
     output_lines = []
     total_steps = None

@@ -47,3 +47,16 @@ export function applyPreset(preset) {
     fusion_levels: preset.levels,
   }))
 }
+
+// Output file for a set, named after its first frame
+export function outputPathFor(firstPath, s) {
+  if (!firstPath) return null
+  const dir = s.output_dir_mode === 'custom' && s.output_dir
+    ? s.output_dir
+    : firstPath.substring(0, firstPath.lastIndexOf('/'))
+  const baseName = firstPath.split('/').pop().replace(/\.[^.]+$/, '')
+  const ext = s.output_format === 'jpeg' ? 'jpg'
+    : s.output_format === 'tiff' ? 'tif'
+    : s.output_format
+  return `${dir}/${s.output_template.replace('{name}', baseName).replace('{ext}', ext)}`
+}

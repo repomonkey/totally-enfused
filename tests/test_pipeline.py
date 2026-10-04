@@ -44,10 +44,16 @@ def test_scheme_url_repeated_file_param():
 
 
 def test_send_queues_until_window_ready(emitted, tif, tmp_path):
-    file_handler._send([tif, str(tmp_path / "missing.tif"), str(tmp_path)])
+    file_handler._send([tif, str(tmp_path / "missing.tif")])
     assert emitted.empty()
     file_handler.drain_pending()
     assert emitted.get(timeout=1) == ("files:open", {"paths": [tif]})
+
+
+def test_folder_goes_to_batch(emitted, tif, tmp_path):
+    file_handler.drain_pending()
+    file_handler._send([str(tmp_path), tif])
+    assert emitted.get(timeout=1) == ("batch:open", {"paths": [str(tmp_path), tif]})
 
 
 def test_send_after_ready_emits_off_thread(emitted, tif):

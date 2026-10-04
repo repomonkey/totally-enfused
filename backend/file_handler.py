@@ -25,7 +25,7 @@ SUPPORTED_EXT = {
 
 _emit = None
 _lock = threading.Lock()
-_pending: list[str] = []   # files that arrive before the window has loaded
+_pending: list[tuple[str, list[str]]] = []   # (event, paths) arriving before the window loads
 _window_ready = False
 _drop_registered = False
 
@@ -36,28 +36,37 @@ def set_emit(fn):
 
 
 def _send(paths: list[str]):
-    """Filter to supported files, then emit now or queue until the window loads."""
-    valid = [p for p in paths if Path(p).is_file() and Path(p).suffix.lower() in SUPPORTED_EXT]
-    print(f'[totally-enfused] open: {len(valid)} of {len(paths)} file(s)', flush=True)
-    if not valid:
+    """
+    Route opened/dropped paths to the frontend: files go to the single-set view
+    (files:open); anything including a folder goes to batch mode (batch:open).
+    Queued until the window has loaded.
+    """
+    dirs = [p for p in paths if Path(p).is_dir()]
+    files = [p for p in paths if Path(p).is_file() and Path(p).suffix.lower() in SUPPORTED_EXT]
+    print(f'[totally-enfused] open: {len(files)} file(s), {len(dirs)} folder(s) of {len(paths)}', flush=True)
+    if dirs:
+        event, payload = 'batch:open', dirs + files
+    elif files:
+        event, payload = 'files:open', files
+    else:
         return
     with _lock:
         if not _window_ready:
-            _pending.extend(valid)
+            _pending.append((event, payload))
             return
     # Open events arrive on the main thread, and evaluate_js blocks until the
     # main thread runs the script — emitting inline deadlocks the app.
-    threading.Thread(target=_emit, args=('files:open', {'paths': valid}), daemon=True).start()
+    threading.Thread(target=_emit, args=(event, {'paths': payload}), daemon=True).start()
 
 
 def drain_pending():
-    """Call once the window has loaded: marks it ready and flushes queued files."""
+    """Call once the window has loaded: marks it ready and flushes queued opens."""
     global _window_ready, _pending
     with _lock:
         _window_ready = True
         queued, _pending = _pending, []
-    if queued:
-        _emit('files:open', {'paths': queued})
+    for event, paths in queued:
+        _emit(event, {'paths': paths})
 
 
 def get_startup_files() -> list[str]:

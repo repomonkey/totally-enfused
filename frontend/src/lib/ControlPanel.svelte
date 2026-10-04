@@ -1,6 +1,7 @@
 <script>
-  import { settings, saveSettings, applyPreset } from '../stores/settings.js'
+  import { settings, saveSettings, applyPreset, outputPathFor } from '../stores/settings.js'
   import { images } from '../stores/images.js'
+  import { mode, batchSets, batchRun, updateSet } from '../stores/batch.js'
   import {
     processState, processProgress, processStage, processMessage,
     processError, resultPath, resultPreview, resetProcess, isRunning
@@ -31,38 +32,11 @@
   }
 
   function buildOutputPath() {
-    const imgs = $images
-    if (!imgs.length) return null
-    const first = imgs[0].path
-    const dir = $settings.output_dir_mode === 'custom' && $settings.output_dir
-      ? $settings.output_dir
-      : first.substring(0, first.lastIndexOf('/'))
-    const baseName = first.split('/').pop().replace(/\.[^.]+$/, '')
-    const ext = $settings.output_format === 'jpeg' ? 'jpg'
-      : $settings.output_format === 'tiff' ? 'tif'
-      : $settings.output_format
-    const filename = $settings.output_template
-      .replace('{name}', baseName)
-      .replace('{ext}', ext)
-    return `${dir}/${filename}`
+    return outputPathFor($images[0]?.path, $settings)
   }
 
-  async function runProcess() {
-    if ($isRunning) return
-    const paths = $images.map(i => i.path)
-    if (paths.length < 2) return
-
-    const outputPath = buildOutputPath()
-    if (!outputPath) return
-
-    resetProcess()
-    processState.set('running')
-
-    await saveSettings($settings)
-
-    await window.pywebview?.api?.process({
-      input_paths: paths,
-      output_path: outputPath,
+  function pipelineParams() {
+    return {
       align_enabled: $settings.align_enabled,
       align_mode: $settings.align_mode,
       align_grid_points: $settings.align_grid_points,
@@ -72,7 +46,51 @@
       contrast_weight: $settings.fusion_contrast_weight,
       hard_mask: $settings.fusion_hard_mask,
       levels: $settings.fusion_levels,
+      jpeg_quality: $settings.output_quality,
+    }
+  }
+
+  async function runProcess() {
+    if ($isRunning) return
+    if ($mode === 'batch') return runBatch()
+    const paths = $images.map(i => i.path)
+    if (paths.length < 2) return
+
+    const outputPath = buildOutputPath()
+    if (!outputPath) return
+
+    resetProcess()
+    processState.set('running')
+    await saveSettings($settings)
+    await window.pywebview?.api?.process({
+      input_paths: paths,
+      output_path: outputPath,
+      ...pipelineParams(),
     })
+  }
+
+  async function runBatch() {
+    const sets = $batchSets.filter(s => s.include)
+    if (!sets.length) return
+    resetProcess()
+    processState.set('running')
+    processMessage.set(`Starting ${sets.length} sets…`)
+    batchRun.set(sets.map(s => s.id))
+    for (const s of $batchSets) {
+      updateSet(s.id, () => s.include
+        ? { status: 'queued', pct: 0, message: '', outputPath: null, resultThumb: null }
+        : { status: 'ready' })
+    }
+    await saveSettings($settings)
+    await window.pywebview?.api?.process_batch({
+      sets: sets.map(s => ({ paths: s.paths, output_path: outputPathFor(s.paths[0], $settings) })),
+      ...pipelineParams(),
+    })
+  }
+
+  function cancel() {
+    processMessage.set('Cancelling…')
+    window.pywebview?.api?.cancel()
   }
 
   async function saveCurrentPreset() {
@@ -93,8 +111,14 @@
     customPresetName = ''
   }
 
-  const canRun = $derived($images.length >= 2 && !$isRunning)
-  const outputPreview = $derived(buildOutputPath())
+  const batchCount = $derived($batchSets.filter(s => s.include).length)
+  const canRun = $derived(!$isRunning && ($mode === 'batch' ? batchCount > 0 : $images.length >= 2))
+  const runLabel = $derived($mode === 'batch'
+    ? (batchCount ? `Blend ${batchCount} set${batchCount !== 1 ? 's' : ''}` : 'No sets selected')
+    : ($images.length < 2 ? 'Load 2+ images' : 'Blend Images'))
+  const outputPreview = $derived($mode === 'batch'
+    ? outputPathFor($batchSets.find(s => s.include)?.paths[0], $settings)
+    : buildOutputPath())
 </script>
 
 <aside class="panel">
@@ -287,9 +311,12 @@
         <svg viewBox="0 0 16 16" fill="currentColor" class="run-icon">
           <path d="M3 2.5l11 5.5-11 5.5V2.5z"/>
         </svg>
-        {$images.length < 2 ? 'Load 2+ images' : 'Blend Images'}
+        {runLabel}
       {/if}
     </button>
+    {#if $isRunning}
+      <button class="cancel-btn" onclick={cancel}>Cancel</button>
+    {/if}
   </div>
 </aside>
 
@@ -512,6 +539,18 @@
     margin-top: auto;
     border-top: 1px solid var(--border-subtle);
   }
+
+  .cancel-btn {
+    width: 100%;
+    margin-top: var(--space-2);
+    padding: var(--space-2);
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+  }
+  .cancel-btn:hover { color: var(--text-primary); border-color: var(--text-muted); }
 
   .run-btn {
     width: 100%;

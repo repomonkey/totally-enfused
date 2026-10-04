@@ -46,6 +46,7 @@ def align(
     grid_points: int = 8,
     crop: bool = True,
     progress_callback: Callable[[int, str], None] | None = None,
+    on_process: Callable[[subprocess.Popen], None] | None = None,
 ) -> list[str]:
     """
     Align images using align_image_stack.
@@ -85,6 +86,8 @@ def align(
         stderr=subprocess.STDOUT,
         text=True,
     )
+    if on_process:
+        on_process(process)  # lets the caller terminate it on cancel
 
     output_lines = []
     for line in process.stdout:

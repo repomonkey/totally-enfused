@@ -15,6 +15,7 @@ from . import image_utils
 from .image_utils import needs_raw_conversion, convert_raws_to_tiff
 from .align_runner import find_align_image_stack, align
 from .enfuse_runner import find_enfuse, blend
+from . import batch as batch_mod
 
 _window = None  # set by main.py after window creation
 
@@ -112,107 +113,203 @@ class API:
 
     def process(self, params: dict):
         """
-        Kick off the full align+blend pipeline in a background thread.
-        Progress is pushed via JS events.
-
-        params keys:
-          input_paths       list[str]
-          output_path       str
-          align_enabled     bool
-          align_mode        str
-          align_grid_points int
-          align_crop        bool
-          exposure_weight   float
-          saturation_weight float
-          contrast_weight   float
-          hard_mask         bool
-          levels            int
+        Run the pipeline on one set in a background thread; progress is pushed
+        as process:* events. params: input_paths, output_path, plus the shared
+        settings read by _pipeline_settings().
         """
-        thread = threading.Thread(target=self._run_process, args=(params,), daemon=True)
-        thread.start()
+        _start_job(_run_single, params)
         return True
 
-    def _run_process(self, params: dict):
-        tmp_dir = None
-        try:
-            input_paths = params["input_paths"]
-            output_path = params["output_path"]
+    def scan_batch(self, paths: list, frames_per_set=None):
+        """Expand folders and group files into bracket sets (see backend/batch.py)."""
+        return batch_mod.scan(paths, size=int(frames_per_set) if frames_per_set else None)
 
-            _emit("process:start", {"total_images": len(input_paths)})
+    def process_batch(self, params: dict):
+        """
+        Run several sets in sequence in a background thread; progress is pushed
+        as batch:* events. params: sets [{paths, output_path}], plus shared settings.
+        """
+        _start_job(_run_batch, params)
+        return True
 
-            tmp_dir = tempfile.mkdtemp(prefix="totally_enfused_")
-            enfuse_inputs = input_paths
-
-            # Convert RAW files to TIFF before alignment/blending
-            has_raw = needs_raw_conversion(input_paths)
-            align_start = 20 if has_raw else 0
-
-            if has_raw:
-                _emit("process:stage", {"stage": "convert", "message": "Converting RAW files…"})
-
-                def raw_progress(pct, msg):
-                    _emit("process:progress", {"pct": max(0, pct) * 0.2, "message": msg})
-
-                enfuse_inputs = convert_raws_to_tiff(input_paths, tmp_dir, raw_progress)
-                _emit("process:progress", {"pct": 20, "message": "RAW conversion done"})
-
-            if params.get("align_enabled", True):
-                _emit("process:stage", {"stage": "align", "message": "Aligning images…"})
-
-                def align_progress(pct, msg):
-                    _emit("process:progress", {
-                        "pct": align_start + max(0, pct) * 0.4,
-                        "message": msg,
-                    })
-
-                enfuse_inputs = align(
-                    input_paths=enfuse_inputs,
-                    output_dir=tmp_dir,
-                    mode=params.get("align_mode", "translation_rotation"),
-                    grid_points=params.get("align_grid_points", 8),
-                    crop=params.get("align_crop", True),
-                    progress_callback=align_progress,
-                )
-
-            blend_start = align_start + (40 if params.get("align_enabled") else 0)
-            blend_scale = 100 - blend_start
-
-            _emit("process:stage", {"stage": "blend", "message": "Blending images…"})
-
-            def enfuse_progress(pct, msg):
-                _emit("process:progress", {
-                    "pct": blend_start + (max(0, pct) / 100 * blend_scale),
-                    "message": msg,
-                })
-
-            result_path = blend(
-                input_paths=enfuse_inputs,
-                output_path=output_path,
-                exposure_weight=params.get("exposure_weight", 1.0),
-                saturation_weight=params.get("saturation_weight", 0.2),
-                contrast_weight=params.get("contrast_weight", 0.0),
-                hard_mask=params.get("hard_mask", False),
-                levels=params.get("levels", 29),
-                progress_callback=enfuse_progress,
-            )
-
-            _emit("process:progress", {"pct": 99, "message": "Copying metadata…"})
-            icc_path = None
-            if has_raw:
-                icc_path = os.path.join(tmp_dir, "sRGB.icc")
-                Path(icc_path).write_bytes(image_utils.srgb_icc_bytes())
-            image_utils.copy_metadata(image_utils.reference_exposure(input_paths), result_path, icc_path)
-
-            preview = image_utils.get_preview_b64(result_path)
-            _emit("process:complete", {"output_path": result_path, "preview": preview})
-
-        except Exception as e:
-            _emit("process:error", {"message": str(e)})
-        finally:
-            if tmp_dir and os.path.exists(tmp_dir):
-                shutil.rmtree(tmp_dir, ignore_errors=True)
+    def cancel(self):
+        """Stop the running job, killing the current align/enfuse process."""
+        _cancel.set()
+        with _proc_lock:
+            if _current_proc and _current_proc.poll() is None:
+                _current_proc.terminate()
+        return True
 
     def reveal_in_finder(self, path: str):
         import subprocess
         subprocess.Popen(["open", "-R", path])
         return True
+
+
+# ---------------------------------------------------------------------- #
+# Pipeline
+# ---------------------------------------------------------------------- #
+
+class Cancelled(Exception):
+    pass
+
+
+_cancel = threading.Event()
+_proc_lock = threading.Lock()
+_current_proc = None
+_job_lock = threading.Lock()  # one job at a time
+
+
+def _start_job(target, params):
+    if not _job_lock.acquire(blocking=False):
+        raise RuntimeError("A job is already running")
+
+    def run():
+        try:
+            target(params)
+        finally:
+            _job_lock.release()
+
+    _cancel.clear()
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _track(proc):
+    global _current_proc
+    with _proc_lock:
+        _current_proc = proc
+    if _cancel.is_set():
+        proc.terminate()
+
+
+def _check_cancel():
+    if _cancel.is_set():
+        raise Cancelled()
+
+
+def _pipeline_settings(params: dict) -> dict:
+    return {
+        "align_enabled": params.get("align_enabled", True),
+        "align_mode": params.get("align_mode", "translation_rotation"),
+        "align_grid_points": params.get("align_grid_points", 8),
+        "align_crop": params.get("align_crop", True),
+        "blend": dict(
+            exposure_weight=params.get("exposure_weight", 1.0),
+            saturation_weight=params.get("saturation_weight", 0.2),
+            contrast_weight=params.get("contrast_weight", 0.0),
+            hard_mask=params.get("hard_mask", False),
+            levels=params.get("levels", 29),
+            jpeg_quality=params.get("jpeg_quality", 85),
+        ),
+    }
+
+
+def run_pipeline(input_paths: list[str], output_path: str, cfg: dict, report) -> str:
+    """
+    RAW conversion → alignment → enfuse → metadata, for one set.
+    report(stage, pct, message): stage is a name when a stage starts, else None;
+    pct is 0–100 within this set, or -1 for message-only updates.
+    """
+    tmp_dir = tempfile.mkdtemp(prefix="totally_enfused_")
+    try:
+        enfuse_inputs = input_paths
+        has_raw = needs_raw_conversion(input_paths)
+        align_start = 20 if has_raw else 0
+
+        if has_raw:
+            report("convert", 0, "Converting RAW files…")
+            enfuse_inputs = convert_raws_to_tiff(
+                input_paths, tmp_dir,
+                lambda pct, msg: (_check_cancel(), report(None, max(0, pct) * 0.2, msg)))
+            report(None, 20, "RAW conversion done")
+        _check_cancel()
+
+        if cfg["align_enabled"]:
+            report("align", align_start, "Aligning images…")
+            enfuse_inputs = align(
+                input_paths=enfuse_inputs,
+                output_dir=tmp_dir,
+                mode=cfg["align_mode"],
+                grid_points=cfg["align_grid_points"],
+                crop=cfg["align_crop"],
+                progress_callback=lambda pct, msg: report(
+                    None, align_start + max(0, pct) * 0.4 if pct >= 0 else -1, msg),
+                on_process=_track,
+            )
+        _check_cancel()
+
+        blend_start = align_start + (40 if cfg["align_enabled"] else 0)
+        blend_scale = 100 - blend_start
+        report("blend", blend_start, "Blending images…")
+        result_path = blend(
+            input_paths=enfuse_inputs,
+            output_path=output_path,
+            progress_callback=lambda pct, msg: report(
+                None, blend_start + max(0, pct) / 100 * blend_scale if pct >= 0 else -1, msg),
+            on_process=_track,
+            **cfg["blend"],
+        )
+        _check_cancel()
+
+        report(None, 99, "Copying metadata…")
+        icc_path = None
+        if has_raw:
+            icc_path = os.path.join(tmp_dir, "sRGB.icc")
+            Path(icc_path).write_bytes(image_utils.srgb_icc_bytes())
+        image_utils.copy_metadata(image_utils.reference_exposure(input_paths), result_path, icc_path)
+        return result_path
+
+    except RuntimeError:
+        if _cancel.is_set():  # the runner failed because we killed its process
+            raise Cancelled() from None
+        raise
+    except Cancelled:
+        raise
+    finally:
+        if _cancel.is_set() and os.path.exists(output_path):
+            os.remove(output_path)  # partial output from an interrupted enfuse
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _run_single(params: dict):
+    def report(stage, pct, msg):
+        if stage:
+            _emit("process:stage", {"stage": stage, "message": msg})
+        _emit("process:progress", {"pct": pct, "message": msg})
+
+    try:
+        _emit("process:start", {"total_images": len(params["input_paths"])})
+        result = run_pipeline(params["input_paths"], params["output_path"],
+                              _pipeline_settings(params), report)
+        _emit("process:complete", {"output_path": result,
+                                   "preview": image_utils.get_preview_b64(result)})
+    except Cancelled:
+        _emit("process:cancelled", {})
+    except Exception as e:
+        _emit("process:error", {"message": str(e)})
+
+
+def _run_batch(params: dict):
+    sets = params["sets"]
+    cfg = _pipeline_settings(params)
+    done = failed = 0
+    _emit("batch:start", {"total": len(sets)})
+    for i, job in enumerate(sets):
+        if _cancel.is_set():
+            break
+        _emit("batch:set_start", {"index": i})
+
+        def report(stage, pct, msg, i=i):
+            _emit("batch:set_progress", {"index": i, "pct": pct, "message": msg})
+
+        try:
+            result = run_pipeline(job["paths"], job["output_path"], cfg, report)
+            done += 1
+            _emit("batch:set_done", {"index": i, "output_path": result,
+                                     "thumbnail": image_utils.get_thumbnail_b64(result)})
+        except Cancelled:
+            break
+        except Exception as e:
+            failed += 1
+            _emit("batch:set_error", {"index": i, "message": str(e)})
+    _emit("batch:complete", {"done": done, "failed": failed, "cancelled": _cancel.is_set()})

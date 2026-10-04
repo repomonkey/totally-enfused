@@ -14,7 +14,8 @@ The stack: Python backend (pywebview bridge + subprocess runners) with a Svelte 
 - **RAW support** — Fujifilm RAF, Canon CR2/CR3, Nikon NEF, Sony ARW, Olympus ORF, DNG, RW2, PEF, SRW. rawpy decodes to 16-bit sRGB TIFF before passing to Hugin. One brightness factor (LibRaw's auto-brighten, measured on the frame nearest 0 EV) is applied to every frame, so the bracket spread survives conversion.
 - **Core Image fallback** — files LibRaw can't decode (JPEG XL-compressed DNG 1.7 from Lightroom, for one) are rendered with Apple's RAW engine via `CIRAWFilter`. Thumbnails and previews use ImageIO first, which is faster and applies orientation. Tested end to end on a three-frame X-T4 bracket of JXL DNGs.
 - **Metadata** — EXIF and XMP are copied from the frame nearest 0 EV onto the output with exiftool, so editors see camera, lens and capture data. RAW-sourced outputs get an embedded sRGB profile. EV is read from RAW files through exiftool.
-- **Alignment** — three modes (translation, translation + rotation, full homography). 8×8 control point grid. Auto-crop. Wraps `align_image_stack` found at `/Applications/Hugin/tools_mac/align_image_stack`.
+- **Alignment** — three modes (translation, translation + rotation, full homography). 8×8 control point grid. Auto-crop. Wraps `align_image_stack`.
+- **Bundled tools** — native arm64 `enfuse` 4.2 and `align_image_stack` (Hugin 2025.0.1) ship inside the app (`Contents/Helpers`, libraries in `Contents/Frameworks/hugin-libs`), built from source by `build/build_hugin_tools.sh` because no official Apple Silicon builds exist. They need macOS 27; on older systems `backend/tools.py` falls back to an installed Hugin. Output matches Hugin 2019; alignment and blending are about 30% faster than the Rosetta build. Licences and the GPL source offer are in `Contents/Resources/ThirdParty/`.
 - **Fusion** — exposure, saturation, and contrast weights; hard mask toggle; pyramid levels. Wraps `enfuse`. Parses progress output to drive the progress bar.
 - **Output** — TIFF (LZW), JPEG (quality 85), PNG. Output to same directory as input or user-chosen folder.
 
@@ -58,6 +59,8 @@ WKWebView's `File` objects carry no filesystem path, so the old drop zone opened
 
 ## Known Minor Issues
 
+- **exiftool is still external** — EV reading, metadata copying and batch grouping use the Homebrew exiftool. Without it, blends still work but outputs carry no camera metadata and batch grouping falls back to file dates.
+
 - **Output filename accumulates `_openWith`** if files opened via the URL scheme are re-opened via the URL scheme again — the `_openWith` suffix comes from DxO's export naming and gets baked into the output name. Cosmetic; doesn't affect the result.
 - **Gatekeeper shows "rejected" during the release build's verify step** — this is expected; `spctl --assess` fails before the notarization ticket is stapled. The build script continues correctly and staples before creating the DMG.
 
@@ -66,6 +69,9 @@ WKWebView's `File` objects carry no filesystem path, so the old drop zone opened
 ## Build & Release
 
 ```bash
+# Native Hugin tools (once, or after a Homebrew upgrade; about a minute)
+bash build/build_hugin_tools.sh
+
 # Full notarized release (run from project root)
 bash build/release.sh
 # Output: dist/TotallyEnfused.dmg

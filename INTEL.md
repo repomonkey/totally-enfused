@@ -27,11 +27,13 @@ cd frontend && npm install && npm run build && cd ..
 ./launch.sh
 ```
 
+If you installed Python 3.12 rather than 3.13, use `python3.12` in the `venv` command; the rest is unchanged.
+
 The `rawpy==0.25.1` pin is the important part. Without it, pip picks the newest rawpy, which has no Intel build, and tries to compile it from source.
 
 ## Build a proper app
 
-Running from source works, but a `.app` in Applications also gets you **Open With** from Finder and photo editors, and the `totallyenfused://` URL scheme. From the project folder:
+Running from source works, but a `.app` in Applications also gets you **Open With** from Finder and photo editors, and the `totallyenfused://` URL scheme. This reuses the `frontend/dist` you built above, so run the source steps first (at least `npm run build`). From the project folder:
 
 ```bash
 TE_MIN_MACOS=$(sw_vers -productVersion) .venv/bin/pyinstaller build/build_mac.spec \
@@ -40,7 +42,16 @@ TE_MIN_MACOS=$(sw_vers -productVersion) .venv/bin/pyinstaller build/build_mac.sp
 
 Then drag `dist/Totally Enfused.app` into Applications. `TE_MIN_MACOS` marks the app as compatible with your version of macOS; without it, the app claims to need macOS 26 and won't open on older systems.
 
-The app isn't signed with a Developer ID, but macOS opens it without complaint because you built it on the same Mac. Don't use `build/release.sh`: it's the signed, notarised release process for Apple Silicon and needs a Developer ID and the Apple Silicon tool builds.
+The app isn't signed with a Developer ID, but macOS opens it without complaint because a locally built app carries no quarantine flag. (If you later move the `.app` to another Mac by AirDrop or download, macOS quarantines it; clear that with `xattr -dr com.apple.quarantine "/Applications/Totally Enfused.app"`.) Don't use `build/release.sh`: it's the signed, notarised release process for Apple Silicon and needs a Developer ID and the Apple Silicon tool builds.
+
+Near the end of the build, PyInstaller prints a warning while it ad-hoc-signs the bundle:
+
+```
+... resource fork, Finder information, or similar detritus not allowed
+WARNING: You will need to sign the bundle manually!
+```
+
+This is harmless. The build still finishes (exit code 0) and the `.app` still runs — the executable gets a working ad-hoc signature, which is all a local build needs. The warning comes from extended attributes on the checked-out source; running `xattr -cr .` in the project folder before building silences it.
 
 ## The first blend
 

@@ -30,7 +30,9 @@ VERSION=$(grep -o "'CFBundleShortVersionString': '[^']*'" "$ROOT/build/build_mac
 DMG="$DIST/TotallyEnfused-$VERSION.dmg"
 
 echo "==> Building frontend"
-cd "$ROOT/frontend" && npm run build
+cd "$ROOT/frontend"
+[ -d node_modules ] || npm ci
+npm run build
 cd "$ROOT"
 
 echo "==> Running PyInstaller"

@@ -73,7 +73,7 @@ def test_collect_files_recurses_and_skips_hidden(tmp_path):
     assert [p.split(str(tmp_path))[1] for p in collect_files([str(tmp_path)])] == ["/a.raf", "/sub/b.dng"]
 
 
-@pytest.mark.skipif(not __import__("backend.image_utils", fromlist=["x"]).find_exiftool(),
+@pytest.mark.skipif(not __import__("backend.tools", fromlist=["x"]).exiftool_cmd(),
                     reason="exiftool not installed")
 def test_previous_results_are_ignored(tmp_path):
     from PIL import Image

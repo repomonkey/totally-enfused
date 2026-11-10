@@ -1,11 +1,12 @@
 import base64
 import os
-import shutil
 import struct
 import subprocess
 import zlib
 from pathlib import Path
 from typing import Callable
+
+from .tools import exiftool_cmd
 
 try:
     from PIL import Image, ExifTags
@@ -95,11 +96,11 @@ def get_exif_ev(path: str) -> float | None:
         except Exception:
             pass
     # piexif can't parse RAW containers (RAF, CR3, ...); exiftool can
-    exiftool = find_exiftool()
+    exiftool = exiftool_cmd()
     if exiftool:
         try:
             out = subprocess.run(
-                [exiftool, "-n", "-s3", "-ExposureCompensation", path],
+                exiftool + ["-n", "-s3", "-ExposureCompensation", path],
                 capture_output=True, text=True, timeout=10,
             ).stdout.strip()
             return float(out) if out else None
@@ -130,13 +131,6 @@ def _auto_bright_factor(path: str) -> float:
     return float(np.median(auto[usable]) / np.median(fixed[usable]))
 
 
-def find_exiftool() -> str | None:
-    for c in ("/opt/homebrew/bin/exiftool", "/usr/local/bin/exiftool", "/opt/local/bin/exiftool"):
-        if os.path.isfile(c) and os.access(c, os.X_OK):
-            return c
-    return shutil.which("exiftool")
-
-
 def srgb_icc_bytes() -> bytes:
     from PIL import ImageCms
     return ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
@@ -148,10 +142,10 @@ def copy_metadata(source: str, dest: str, icc_path: str | None = None) -> bool:
     editors see camera, lens and capture data. Optionally embed an ICC profile.
     Returns False if exiftool isn't available or the copy failed.
     """
-    exiftool = find_exiftool()
+    exiftool = exiftool_cmd()
     if not exiftool:
         return False
-    cmd = [exiftool, "-q", "-q", "-overwrite_original",
+    cmd = exiftool + ["-q", "-q", "-overwrite_original",
            "-TagsFromFile", source, "-exif:all", "-xmp:all",
            "-Software=Totally Enfused"]
     if is_raw(source):

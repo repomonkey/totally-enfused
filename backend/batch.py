@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .file_handler import SUPPORTED_EXT
-from .image_utils import find_exiftool
+from .tools import exiftool_cmd
 
 DEFAULT_GAP_S = 4.0
 
@@ -43,11 +43,11 @@ def collect_files(paths: list[str]) -> list[str]:
 def read_frames(paths: list[str]) -> list[dict]:
     """Capture metadata for each file via one exiftool call; mtime fallback."""
     meta = {}
-    exiftool = find_exiftool()
+    exiftool = exiftool_cmd()
     if exiftool and paths:
         try:
             res = subprocess.run(
-                [exiftool, "-json", "-n", "-fast2", "-charset", "filename=utf8",
+                exiftool + ["-json", "-n", "-fast2", "-charset", "filename=utf8",
                  "-DateTimeOriginal", "-SubSecTimeOriginal", "-ExposureTime",
                  "-FNumber", "-ISO", "-ExposureCompensation", "-Software", "-@", "-"],
                 input="\n".join(paths), capture_output=True, text=True, timeout=300,

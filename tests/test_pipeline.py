@@ -13,7 +13,7 @@ from backend import file_handler, image_utils
 
 SAMPLE_RAW = os.environ.get("TE_SAMPLE_RAW")
 needs_raw = pytest.mark.skipif(not SAMPLE_RAW, reason="set TE_SAMPLE_RAW")
-needs_exiftool = pytest.mark.skipif(not image_utils.find_exiftool(), reason="exiftool not installed")
+needs_exiftool = pytest.mark.skipif(not image_utils.exiftool_cmd(), reason="exiftool not installed")
 
 
 @pytest.fixture
@@ -80,12 +80,12 @@ def test_metadata_copied_from_raw(tmp_path, tif):
     icc.write_bytes(image_utils.srgb_icc_bytes())
     assert image_utils.copy_metadata(SAMPLE_RAW, tif, str(icc))
     tags = subprocess.run(
-        [image_utils.find_exiftool(), "-s", "-Make", "-Model", "-Orientation",
+        image_utils.exiftool_cmd() + ["-s", "-Make", "-Model", "-Orientation",
          "-ProfileDescription", "-Software", tif],
         capture_output=True, text=True,
     ).stdout
     src_make = subprocess.run(
-        [image_utils.find_exiftool(), "-s3", "-Make", SAMPLE_RAW], capture_output=True, text=True
+        image_utils.exiftool_cmd() + ["-s3", "-Make", SAMPLE_RAW], capture_output=True, text=True
     ).stdout.strip()
     assert src_make and src_make in tags
     assert "Orientation" not in tags  # pixels are already rotated by rawpy

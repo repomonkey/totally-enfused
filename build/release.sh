@@ -26,7 +26,8 @@ fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIST="$ROOT/dist"
 APP="$DIST/Totally Enfused.app"
-DMG="$DIST/TotallyEnfused.dmg"
+VERSION=$(grep -o "'CFBundleShortVersionString': '[^']*'" "$ROOT/build/build_mac.spec" | cut -d"'" -f4)
+DMG="$DIST/TotallyEnfused-$VERSION.dmg"
 
 echo "==> Building frontend"
 cd "$ROOT/frontend" && npm run build
@@ -49,6 +50,12 @@ mkdir -p "$APP/Contents/Helpers" "$APP/Contents/Frameworks/hugin-libs" "$APP/Con
 cp "$B/Helpers/"* "$APP/Contents/Helpers/"
 cp "$B/Frameworks/hugin-libs/"* "$APP/Contents/Frameworks/hugin-libs/"
 cp -R "$B/licenses/"* "$APP/Contents/Resources/ThirdParty/"
+
+echo "==> Adding ExifTool"
+"$ROOT/.venv/bin/python" "$ROOT/build/bundle_exiftool.py" "$B"
+cp -R "$B/exiftool" "$APP/Contents/Resources/exiftool"
+cp -R "$B/licenses/"exiftool-* "$APP/Contents/Resources/ThirdParty/"
+cp "$ROOT/build/THIRD_PARTY_NOTICES.md" "$APP/Contents/Resources/ThirdParty/"
 
 echo "==> Signing Hugin tools (libraries first, then executables)"
 for f in "$APP/Contents/Frameworks/hugin-libs/"*.dylib "$APP/Contents/Helpers/"*; do

@@ -1,10 +1,11 @@
 """
-Locate enfuse and align_image_stack.
+Locate enfuse, align_image_stack and exiftool.
 
 Search order:
   1. Bundled with the app: Totally Enfused.app/Contents/Helpers/
   2. Development build:    <repo>/vendor/bundle/Helpers/  (build/build_hugin_tools.sh)
   3. Installed copies:     PATH, Homebrew/MacPorts, Hugin.app
+ExifTool follows the same order from Contents/Resources/exiftool (see exiftool_cmd).
 
 Each candidate is launched once and only used if it starts: the bundled
 build targets macOS 27, so on older systems dyld refuses to load it and the
@@ -75,3 +76,34 @@ def find_tool(name: str) -> str | None:
 
 def is_bundled(path: str | None) -> bool:
     return bool(path) and any(Path(path).parent == d for d in _bundled_dirs())
+
+
+def _bundled_exiftool_dirs() -> list[Path]:
+    dirs = []
+    if getattr(sys, "frozen", False):
+        dirs.append(Path(sys.executable).resolve().parent.parent / "Resources" / "exiftool")
+    dirs.append(ROOT / "vendor" / "bundle" / "exiftool")
+    return dirs
+
+
+@functools.cache
+def exiftool_cmd() -> list[str] | None:
+    """
+    Command prefix for ExifTool. The bundled copy (build/bundle_exiftool.py) is a
+    Perl script run with macOS's /usr/bin/perl; installed copies are the fallback.
+    """
+    candidates = []
+    if os.access("/usr/bin/perl", os.X_OK):
+        candidates += [["/usr/bin/perl", str(d / "exiftool")]
+                       for d in _bundled_exiftool_dirs() if (d / "exiftool").is_file()]
+    for p in ("/opt/homebrew/bin/exiftool", "/usr/local/bin/exiftool",
+              "/opt/local/bin/exiftool", shutil.which("exiftool")):
+        if p and os.path.isfile(p) and os.access(p, os.X_OK):
+            candidates.append([p])
+    for cmd in candidates:
+        try:
+            if subprocess.run(cmd + ["-ver"], capture_output=True, timeout=15).returncode == 0:
+                return cmd
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    return None

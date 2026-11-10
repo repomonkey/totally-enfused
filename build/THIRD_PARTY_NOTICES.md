@@ -1,6 +1,6 @@
 # Third-party software in Totally Enfused
 
-Totally Enfused is MIT-licensed. It ships two command-line programs from other projects, `enfuse` and `align_image_stack`, as separate executables in `Contents/Helpers`, with the libraries they need in `Contents/Frameworks/hugin-libs`. The app runs them as independent processes and does not link against them. Each program keeps its own licence, and the full licence texts are in `Contents/Resources/ThirdParty/`, one folder per component.
+Totally Enfused is MIT-licensed. It ships two command-line programs from other projects, `enfuse` and `align_image_stack`, as separate executables in `Contents/Helpers`, with the libraries they need in `Contents/Frameworks/hugin-libs`. It also ships ExifTool, a Perl program, in `Contents/Resources/exiftool`. The app runs them as independent processes and does not link against them. Each program keeps its own licence, and the full licence texts are in `Contents/Resources/ThirdParty/`, one folder per component.
 
 ## Programs
 
@@ -8,8 +8,11 @@ Totally Enfused is MIT-licensed. It ships two command-line programs from other p
 |---|---|---|---|---|
 | `enfuse` | enblend-enfuse | 4.2 | GPL-2.0-or-later | https://sourceforge.net/projects/enblend/files/enblend-enfuse/enblend-enfuse-4.2/ |
 | `align_image_stack` | Hugin | 2025.0.1 | GPL-2.0-or-later | https://sourceforge.net/projects/hugin/files/hugin/hugin-2025.0/ |
+| `exiftool` | ExifTool by Phil Harvey | 13.55 | Same terms as Perl (Artistic License or GPL-1.0-or-later) | https://exiftool.org/ |
 
-Both were built from the unmodified release archives above, with two build-only changes:
+ExifTool is copied from its Homebrew package, keeping only its own modules (`Image::ExifTool` and `File::RandomAccess`). One line is changed: Homebrew's absolute library path is replaced with upstream's `unshift @INC, $incDir`, so the script finds its modules next to itself. The script runs with macOS's `/usr/bin/perl`. See `build/bundle_exiftool.py`.
+
+`enfuse` and `align_image_stack` were built from the unmodified release archives above, with two build-only changes:
 
 - **Hugin**: one line of `CMakeLists.txt` splits the OpenMP compiler flags into separate arguments (`SEPARATE_ARGUMENTS`) so Apple clang accepts them.
 - **vigra**: `--this` is corrected to `--(*this)` in `include/vigra/multi_iterator_coupled.hxx`. The upstream project carries the same fix.

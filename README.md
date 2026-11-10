@@ -13,6 +13,8 @@ Get the latest `.dmg` from [Releases](https://github.com/repomonkey/totally-enfu
 
 Requires an Apple Silicon Mac running macOS 27 or later. Everything it needs is inside the app, including `enfuse`, `align_image_stack` and [ExifTool](https://exiftool.org/). The app also launches on macOS 26, where the bundled Hugin tools can't load, so you would need [Hugin](https://hugin.sourceforge.io/) installed separately.
 
+**Intel Macs:** there's no download, because macOS 27 doesn't run on Intel hardware, but you can build and run the app yourself. See [INTEL.md](INTEL.md).
+
 ## How it's built
 
 A Python backend runs the pipeline (RAW conversion with rawpy, or Core Image for files LibRaw can't read, then alignment, blending and metadata). The interface is Svelte, displayed in a native window by [pywebview](https://pywebview.flowrl.com/), and PyInstaller packages it all as a `.app`.

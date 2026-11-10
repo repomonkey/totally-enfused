@@ -6,6 +6,7 @@ Run from the project root:
 """
 
 from pathlib import Path
+import os
 import sys
 
 ROOT = Path(SPECPATH).parent
@@ -92,7 +93,9 @@ app = BUNDLE(
         'CFBundleDisplayName': 'Totally Enfused',
         'CFBundleShortVersionString': '1.0.0',
         'CFBundleVersion': '1',
-        'LSMinimumSystemVersion': '26.0',  # bundled Homebrew Python requires macOS 26
+        # Releases: macOS 26 (the bundled Homebrew Python needs it). Local builds,
+        # e.g. on Intel (see INTEL.md), set TE_MIN_MACOS to the build machine's version.
+        'LSMinimumSystemVersion': os.environ.get('TE_MIN_MACOS', '26.0'),
         'LSApplicationCategoryType': 'public.app-category.photography',
 
         # URL scheme: totallyenfused://blend?files=...

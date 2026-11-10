@@ -2,7 +2,7 @@
 
 The download on the Releases page is for Apple Silicon Macs on macOS 27, which doesn't run on Intel hardware (Apple's last release for Intel Macs is macOS 26). The app's code isn't tied to Apple Silicon, though, so you can run it on an Intel Mac by building it yourself. It takes about 15 minutes, and none of the steps needs Homebrew.
 
-> **Status:** these steps have not yet been tested on real Intel hardware. If you try them, please open an issue to say how it went, including your Mac and macOS version.
+> **Tested** on an Intel iMac running macOS 15.7.9: running from source, building the `.app`, and blending a bracket with Hugin 2019.2.0's tools. Older macOS versions haven't been tried. If something goes differently on your Mac, please open an issue and include your Mac model and macOS version.
 
 ## What you need
 

@@ -1,5 +1,6 @@
 <script>
-  import { images, selectedIndex, removeImage, reorderImages } from '../stores/images.js'
+  import { images, selectedIndex, removeImage, reorderImages, referencePath, effectiveReference } from '../stores/images.js'
+  import { settings } from '../stores/settings.js'
   import DropZone from './DropZone.svelte'
 
   let dragFrom = $state(null)
@@ -7,6 +8,11 @@
 
   function select(idx) {
     selectedIndex.set(idx)
+  }
+
+  function setReference(e, path) {
+    e.stopPropagation()
+    referencePath.set($referencePath === path ? null : path)   // clicking the chosen one returns to auto
   }
 
   function remove(e, path) {
@@ -67,6 +73,15 @@
 
       {#if img.ev !== null && img.ev !== undefined}
         <span class="ev-badge">{img.ev > 0 ? '+' : ''}{img.ev.toFixed(1)} EV</span>
+      {/if}
+
+      {#if $settings.motion_enabled}
+        {#if img.path === $effectiveReference}
+          <span class="ref-badge" title="Moving areas come from this frame{$referencePath ? '' : ' (chosen automatically: nearest 0 EV)'}">REF</span>
+        {:else}
+          <button class="ref-btn" title="Take moving areas from this frame" aria-label="Use {img.name} as the reference for moving areas"
+            onclick={e => setReference(e, img.path)}>REF</button>
+        {/if}
       {/if}
 
       <button
@@ -141,6 +156,37 @@
 
   .loading {
     animation: pulse 1.5s ease infinite;
+  }
+
+  .ref-badge, .ref-btn {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    padding: 0 4px;
+    border-radius: 2px;
+    line-height: 14px;
+  }
+
+  .ref-badge {
+    background: var(--accent);
+    color: var(--accent-text);
+  }
+
+  .ref-btn {
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--transition);
+  }
+
+  .thumb-wrap:hover .ref-btn,
+  .ref-btn:focus-visible {
+    opacity: 1;
   }
 
   .ev-badge {

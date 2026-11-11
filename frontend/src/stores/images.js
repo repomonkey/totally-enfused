@@ -5,6 +5,21 @@ export const images = writable([])
 
 export const selectedIndex = writable(0)
 
+// Reference frame for motion handling: moving areas come from this frame.
+// null = automatic, matching the backend: the frame nearest 0 EV, else the middle one.
+export const referencePath = writable(null)
+
+export function autoReferencePath(list) {
+  const withEv = list.filter(i => i.ev !== null && i.ev !== undefined)
+  if (withEv.length) return withEv.reduce((a, b) => (Math.abs(b.ev) < Math.abs(a.ev) ? b : a)).path
+  return list[Math.floor(list.length / 2)]?.path ?? null
+}
+
+export const effectiveReference = derived(
+  [images, referencePath],
+  ([$images, $ref]) => ($ref && $images.some(i => i.path === $ref) ? $ref : autoReferencePath($images))
+)
+
 export const selectedImage = derived(
   [images, selectedIndex],
   ([$images, $idx]) => $images[$idx] ?? null
@@ -35,6 +50,7 @@ export function reorderImages(from, to) {
 export function clearImages() {
   images.set([])
   selectedIndex.set(0)
+  referencePath.set(null)
 }
 
 export function updateImage(path, updates) {

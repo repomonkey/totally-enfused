@@ -15,7 +15,24 @@ const DEFAULTS = {
   fusion_contrast_weight: 0.0,
   fusion_hard_mask: false,
   fusion_levels: 29,
+  fusion_exposure_optimum: 0.5,
+  fusion_highlight_protect: 0,
+  motion_enabled: false,
+  motion_sensitivity: 0.5,
   last_preset: 'natural',
+}
+
+// Preset field -> settings field. Presets saved before a field existed get its default.
+const PRESET_FIELDS = {
+  exposure_weight: 'fusion_exposure_weight',
+  saturation_weight: 'fusion_saturation_weight',
+  contrast_weight: 'fusion_contrast_weight',
+  hard_mask: 'fusion_hard_mask',
+  levels: 'fusion_levels',
+  exposure_optimum: 'fusion_exposure_optimum',
+  highlight_protect: 'fusion_highlight_protect',
+  motion_enabled: 'motion_enabled',
+  motion_sensitivity: 'motion_sensitivity',
 }
 
 export const settings = writable({ ...DEFAULTS })
@@ -38,14 +55,15 @@ export async function saveSettings(data) {
 }
 
 export function applyPreset(preset) {
-  settings.update(s => ({
-    ...s,
-    fusion_exposure_weight: preset.exposure_weight,
-    fusion_saturation_weight: preset.saturation_weight,
-    fusion_contrast_weight: preset.contrast_weight,
-    fusion_hard_mask: preset.hard_mask,
-    fusion_levels: preset.levels,
-  }))
+  settings.update(s => {
+    const next = { ...s }
+    for (const [field, key] of Object.entries(PRESET_FIELDS)) next[key] = preset[field] ?? DEFAULTS[key]
+    return next
+  })
+}
+
+export function presetFromSettings(s) {
+  return Object.fromEntries(Object.entries(PRESET_FIELDS).map(([field, key]) => [field, s[key]]))
 }
 
 // Output file for a set, named after its first frame

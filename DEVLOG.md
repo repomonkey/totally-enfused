@@ -19,6 +19,18 @@ The stack: Python backend (pywebview bridge + subprocess runners) with a Svelte 
 - **Fusion** — exposure, saturation, and contrast weights; hard mask toggle; pyramid levels. Wraps `enfuse`. Parses progress output to drive the progress bar.
 - **Output** — TIFF (LZW), JPEG (quality 85), PNG. Output to same directory as input or user-chosen folder.
 
+### Motion handling (1.1)
+- `backend/deghost.py`, off by default and on in the Seascape preset. After alignment, each frame is compared with a reference (nearest 0 EV, or the one picked with REF in the strip) once their tones are matched. Tone curves are learned per image, because a plain exposure multiplier left broad tonal differences that looked like motion.
+- Where a frame differs, its pixels are replaced with the reference's re-toned to that frame's exposure, feathered. An earlier version cut moving areas out with alpha masks instead; that left seams, because those areas took the reference's tones while their surroundings took the blend's.
+- Rewritten frames keep Hugin's XPosition/YPosition tags. Dropping them shifted frames by 10 pixels on the shared canvas.
+- Skipped when more than 60% of the image differs, which means alignment failed rather than things moving.
+
+### Blending and controls (1.1)
+- enfuse blends in CIELAB. Its default for files with an ICC profile (all of ours), CIELUV, left black and coloured specks at high-contrast edges: 6,425 on a JXL DNG seascape, 3 with CIELAB.
+- New controls: Brightness target (`--exposure-optimum`) and Highlight protection (`--exposure-cutoff`). Each slider has a line explaining what it really does; saturation weight, for one, selects colourful pixels rather than adding saturation.
+- Results are never overwritten: `_01`, `_02`… are added when a name exists.
+- The panel now waits for pywebview's bridge before loading presets and saved settings. Before, both could silently fail to load at startup.
+
 ### Batch mode
 - Switch with Single / Batch in the header, or drop or open a folder (scanned recursively).
 - Sets are grouped from one exiftool read of capture time, shutter, aperture, ISO and EV: a pause after the previous exposure ends, or a repeated exposure level, starts a new set; sets never span folders. "Frames per set" overrides detection. Lone frames are listed as skipped, and earlier results (tagged `Software=Totally Enfused`) are ignored.

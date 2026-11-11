@@ -91,8 +91,8 @@ app = BUNDLE(
         'NSHighResolutionCapable': True,
         'NSHumanReadableCopyright': '© 2026 Andy Hutchinson',
         'CFBundleDisplayName': 'Totally Enfused',
-        'CFBundleShortVersionString': '1.0.0',
-        'CFBundleVersion': '1',
+        'CFBundleShortVersionString': '1.1.0',
+        'CFBundleVersion': '2',
         # Releases: macOS 26 (the bundled Homebrew Python needs it). Local builds,
         # e.g. on Intel (see INTEL.md), set TE_MIN_MACOS to the build machine's version.
         'LSMinimumSystemVersion': os.environ.get('TE_MIN_MACOS', '26.0'),

@@ -2,6 +2,7 @@
   import './styles/global.css'
 
   import { onMount } from 'svelte'
+  import { bridgeReady } from './bridge.js'
   import { images, selectedImage, clearImages, loadImagePaths, ensurePreview } from './stores/images.js'
   import { settings, loadSettings } from './stores/settings.js'
   import {
@@ -128,23 +129,12 @@
     document.addEventListener('dragover', e => e.preventDefault())
     document.addEventListener('drop', e => e.preventDefault())
 
+    await bridgeReady()
     await loadSettings()
-    // Poll until pywebview bridge is ready
-    const ready = () => !!window.pywebview?.api
-    if (!ready()) {
-      await new Promise(resolve => {
-        const t = setInterval(() => { if (ready()) { clearInterval(t); resolve() } }, 100)
-      })
-    }
-    const detectTools = async () => {
-      try { return await window.pywebview.api.check_tools() }
-      catch { return { enfuse: null, align_image_stack: null } }
-    }
-    tools = await detectTools()
-    // Retry once if both are missing — first call can race with cold startup
-    if (!tools.enfuse && !tools.align_image_stack) {
-      await new Promise(r => setTimeout(r, 1500))
-      tools = await detectTools()
+    try {
+      tools = await window.pywebview.api.check_tools()
+    } catch {
+      tools = { enfuse: null, align_image_stack: null }
     }
   })
 

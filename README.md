@@ -3,6 +3,7 @@
 A Mac app for exposure fusion. Drop in a bracketed set and it aligns the frames with `align_image_stack` and blends them with `enfuse`, the Hugin tools behind most free HDR workflows, without going near a terminal.
 
 - **RAW in, 16-bit TIFF out.** Fujifilm, Canon, Nikon, Sony, Olympus, Panasonic, Pentax, Samsung and DNG files, including JPEG XL-compressed DNGs from Lightroom. The result keeps the camera and lens metadata of the frame nearest 0 EV.
+- **Sharp moving water.** Optional motion handling takes waves, clouds, leaves and birds from one reference frame, so they stay crisp instead of blending into a ghostly blur.
 - **Batch mode.** Drop a folder and the app finds every bracket in it, using capture time and exposure, then blends them one after another.
 - **Works with your editor.** Open With, drag and drop, a Finder Quick Action, and a `totallyenfused://blend?files=…` URL scheme for scripts and other apps.
 - **Self-contained.** Native Apple Silicon builds of `enfuse` and `align_image_stack` ship inside the app, along with ExifTool, so there's nothing else to install.

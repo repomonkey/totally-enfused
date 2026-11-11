@@ -1,6 +1,8 @@
 <script>
-  import { settings, saveSettings, applyPreset, outputPathFor } from '../stores/settings.js'
-  import { images } from '../stores/images.js'
+  import { onMount } from 'svelte'
+  import { bridgeReady } from '../bridge.js'
+  import { settings, saveSettings, applyPreset, outputPathFor, presetFromSettings } from '../stores/settings.js'
+  import { images, referencePath } from '../stores/images.js'
   import { mode, batchSets, batchRun, updateSet } from '../stores/batch.js'
   import {
     processState, processProgress, processStage, processMessage,
@@ -14,8 +16,9 @@
   let customPresetName = $state('')
   let showPresetSave = $state(false)
 
-  $effect(() => {
-    window.pywebview?.api?.get_presets().then(p => { presets = p ?? {} })
+  onMount(async () => {
+    await bridgeReady()
+    presets = (await window.pywebview.api.get_presets()) ?? {}
   })
 
   function toggleSection(id) {
@@ -47,6 +50,10 @@
       hard_mask: $settings.fusion_hard_mask,
       levels: $settings.fusion_levels,
       jpeg_quality: $settings.output_quality,
+      exposure_optimum: $settings.fusion_exposure_optimum,
+      highlight_protect: $settings.fusion_highlight_protect,
+      motion_enabled: $settings.motion_enabled,
+      motion_sensitivity: $settings.motion_sensitivity,
     }
   }
 
@@ -62,10 +69,12 @@
     resetProcess()
     processState.set('running')
     await saveSettings($settings)
+    const ref = paths.indexOf($referencePath)
     await window.pywebview?.api?.process({
       input_paths: paths,
       output_path: outputPath,
       ...pipelineParams(),
+      reference_index: ref >= 0 ? ref : null,   // null: the backend picks the frame nearest 0 EV
     })
   }
 
@@ -99,11 +108,7 @@
     const preset = {
       name: customPresetName,
       description: 'Custom preset',
-      exposure_weight: $settings.fusion_exposure_weight,
-      saturation_weight: $settings.fusion_saturation_weight,
-      contrast_weight: $settings.fusion_contrast_weight,
-      hard_mask: $settings.fusion_hard_mask,
-      levels: $settings.fusion_levels,
+      ...presetFromSettings($settings),
     }
     await window.pywebview?.api?.save_preset(key, preset)
     presets = { ...presets, [key]: { ...preset, builtin: false } }
@@ -207,6 +212,41 @@
     {/if}
   </div>
 
+  <!-- Motion -->
+  <div class="section-wrap">
+    <button class="section-header" onclick={() => toggleSection('motion')}>
+      <div class="header-left">
+        <span>Motion</span>
+        {#if $settings.motion_enabled}
+          <span class="badge on">On</span>
+        {/if}
+      </div>
+      <svg class="chevron" class:open={openSection === 'motion'} viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+        <path d="M1 1l4 4 4-4"/>
+      </svg>
+    </button>
+    {#if openSection === 'motion'}
+    <div class="section-body">
+      <label class="toggle-row">
+        <input type="checkbox" bind:checked={$settings.motion_enabled} />
+        <span>Take moving areas from one frame</span>
+      </label>
+      <span class="hint-text">
+        For waves, clouds, leaves or people that moved between frames. Without it,
+        they're averaged into a blur. Moving areas come from the frame marked REF in
+        the strip: the one nearest 0 EV, unless you pick another.
+      </span>
+      {#if $settings.motion_enabled}
+        <div class="field">
+          <label for="motion-sens">Sensitivity <span class="val">{formatSliderValue('motion_sensitivity')}</span></label>
+          <input id="motion-sens" type="range" min="0" max="1" step="0.05" bind:value={$settings.motion_sensitivity} />
+          <span class="hint-text">Higher catches subtler movement.</span>
+        </div>
+      {/if}
+    </div>
+    {/if}
+  </div>
+
   <!-- Fusion -->
   <div class="section-wrap">
     <button class="section-header" onclick={() => toggleSection('fusion')}>
@@ -220,27 +260,44 @@
       <div class="field">
         <label for="fw-exposure">Exposure weight <span class="val">{formatSliderValue('fusion_exposure_weight')}</span></label>
         <input id="fw-exposure" type="range" min="0" max="1" step="0.05" bind:value={$settings.fusion_exposure_weight} />
+        <span class="hint-text">Favours well-exposed pixels. This is what lifts shadows and holds highlights, so keep it near 1.</span>
+      </div>
+
+      <div class="field">
+        <label for="fw-optimum">Brightness target <span class="val">{formatSliderValue('fusion_exposure_optimum')}</span></label>
+        <input id="fw-optimum" type="range" min="0.3" max="0.7" step="0.01" bind:value={$settings.fusion_exposure_optimum} />
+        <span class="hint-text">The brightness exposure weighting aims for. Higher lifts shadows; lower keeps skies deeper.</span>
+      </div>
+
+      <div class="field">
+        <label for="fw-highlights">Highlight protection <span class="val">{$settings.fusion_highlight_protect}%</span></label>
+        <input id="fw-highlights" type="range" min="0" max="20" step="1" bind:value={$settings.fusion_highlight_protect} />
+        <span class="hint-text">Ignores near-white pixels in the exposure weighting, so a bright frame's washed-out sky can't dilute a darker frame's colour.</span>
       </div>
 
       <div class="field">
         <label for="fw-saturation">Saturation weight <span class="val">{formatSliderValue('fusion_saturation_weight')}</span></label>
         <input id="fw-saturation" type="range" min="0" max="1" step="0.05" bind:value={$settings.fusion_saturation_weight} />
+        <span class="hint-text">Prefers more colourful pixels when choosing between frames. It doesn't add saturation; do that in your editor.</span>
       </div>
 
       <div class="field">
         <label for="fw-contrast">Contrast weight <span class="val">{formatSliderValue('fusion_contrast_weight')}</span></label>
         <input id="fw-contrast" type="range" min="0" max="1" step="0.05" bind:value={$settings.fusion_contrast_weight} />
+        <span class="hint-text">Prefers sharp, detailed pixels. Mainly for focus stacks; high values can add noise.</span>
       </div>
 
       <div class="field">
         <label for="fw-levels">Blend levels <span class="val">{$settings.fusion_levels}</span></label>
         <input id="fw-levels" type="range" min="1" max="29" step="1" bind:value={$settings.fusion_levels} />
+        <span class="hint-text">How far blending spreads. Lower values can show halos; leave at the maximum unless you see a problem.</span>
       </div>
 
       <label class="toggle-row">
         <input type="checkbox" bind:checked={$settings.fusion_hard_mask} />
         <span>Hard mask</span>
       </label>
+      <span class="hint-text">Takes each pixel from a single frame instead of averaging. For focus stacks; adds noise to exposure blends.</span>
     </div>
     {/if}
   </div>
@@ -380,6 +437,11 @@
     border-radius: 3px;
     background: var(--bg-overlay);
     color: var(--text-muted);
+  }
+
+  .badge.on {
+    background: var(--accent-dim);
+    color: var(--accent);
   }
 
   .section-body {

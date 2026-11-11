@@ -16,6 +16,7 @@ from .image_utils import needs_raw_conversion, convert_raws_to_tiff
 from .align_runner import find_align_image_stack, align
 from .enfuse_runner import find_enfuse, blend
 from . import batch as batch_mod
+from . import deghost
 
 _window = None  # set by main.py after window creation
 
@@ -200,16 +201,35 @@ def _pipeline_settings(params: dict) -> dict:
             hard_mask=params.get("hard_mask", False),
             levels=params.get("levels", 29),
             jpeg_quality=params.get("jpeg_quality", 85),
+            exposure_optimum=params.get("exposure_optimum", 0.5),
+            highlight_protect=params.get("highlight_protect", 0.0),
         ),
+        "motion_enabled": params.get("motion_enabled", False),
+        "motion_sensitivity": params.get("motion_sensitivity", 0.5),
+        # Index into input_paths; None = the frame nearest 0 EV
+        "reference_index": params.get("reference_index"),
     }
+
+
+def unique_path(path: str) -> str:
+    """path, or path with _01, _02… before the extension if it already exists."""
+    p = Path(path)
+    if not p.exists():
+        return path
+    for n in range(1, 1000):
+        candidate = p.with_name(f"{p.stem}_{n:02d}{p.suffix}")
+        if not candidate.exists():
+            return str(candidate)
+    raise RuntimeError(f"Too many existing outputs named {p.name}")
 
 
 def run_pipeline(input_paths: list[str], output_path: str, cfg: dict, report) -> str:
     """
-    RAW conversion → alignment → enfuse → metadata, for one set.
+    RAW conversion → alignment → motion masks (optional) → enfuse → metadata, for one set.
     report(stage, pct, message): stage is a name when a stage starts, else None;
     pct is 0–100 within this set, or -1 for message-only updates.
     """
+    output_path = unique_path(output_path)   # never overwrite an earlier result
     tmp_dir = tempfile.mkdtemp(prefix="totally_enfused_")
     try:
         enfuse_inputs = input_paths
@@ -236,6 +256,18 @@ def run_pipeline(input_paths: list[str], output_path: str, cfg: dict, report) ->
                     None, align_start + max(0, pct) * 0.4 if pct >= 0 else -1, msg),
                 on_process=_track,
             )
+        _check_cancel()
+
+        if cfg["motion_enabled"]:
+            ref = cfg["reference_index"]
+            if ref is None or not 0 <= ref < len(input_paths):
+                ref = input_paths.index(image_utils.reference_exposure(input_paths))
+            report("motion", -1, f"Finding movement (reference: {Path(input_paths[ref]).name})…")
+            enfuse_inputs, moving = deghost.apply(enfuse_inputs, ref, cfg["motion_sensitivity"], tmp_dir)
+            if moving > deghost.MAX_MOVING:
+                report(None, -1, "Motion handling skipped: the frames differ almost everywhere (check alignment)")
+            else:
+                report(None, -1, f"Moving areas from {Path(input_paths[ref]).name}: {moving:.0%} of the image")
         _check_cancel()
 
         blend_start = align_start + (40 if cfg["align_enabled"] else 0)

@@ -19,6 +19,8 @@ def blend(
     hard_mask: bool = False,
     levels: int = 29,
     jpeg_quality: int = 85,
+    exposure_optimum: float = 0.5,
+    highlight_protect: float = 0.0,
     progress_callback: Callable[[int, str], None] | None = None,
     on_process: Callable[[subprocess.Popen], None] | None = None,
 ) -> str:
@@ -41,6 +43,17 @@ def blend(
     cmd += ["--saturation-weight", str(saturation_weight)]
     cmd += ["--contrast-weight", str(contrast_weight)]
     cmd += ["--levels", str(levels)]
+    # enfuse picks CIELUV for files with an ICC profile (all of ours); at
+    # high-contrast edges that leaves black and coloured specks where the
+    # pyramid undershoots. CIELAB blends the same but without them.
+    cmd += ["--blend-colorspace=CIELAB"]
+    # Brightness the exposure weighting favours (0.5 = mid-grey). Higher lifts
+    # shadows by preferring brighter frames; lower keeps skies darker.
+    cmd += [f"--exposure-optimum={exposure_optimum:g}"]
+    if highlight_protect > 0:
+        # Zero exposure weight for near-white pixels so a bright frame's
+        # blown highlights don't dilute a darker frame's sky.
+        cmd += [f"--exposure-cutoff=0%:{100 - highlight_protect:g}%"]
     if hard_mask:
         cmd += ["--hard-mask"]
 

@@ -19,6 +19,13 @@ const DEFAULTS = {
   fusion_highlight_protect: 0,
   motion_enabled: false,
   motion_sensitivity: 0.5,
+  split_enabled: false,
+  split_line: 0.5,        // height of the line at the centre, 0 = top
+  split_feather: 0.2,     // transition width, fraction of image height
+  split_tilt: 0,          // degrees, positive runs down to the right
+  sky_exposure_optimum: 0.42,
+  sky_highlight_protect: 12,
+  sky_saturation_weight: 0.5,
   last_preset: 'natural',
 }
 

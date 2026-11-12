@@ -54,6 +54,13 @@
       highlight_protect: $settings.fusion_highlight_protect,
       motion_enabled: $settings.motion_enabled,
       motion_sensitivity: $settings.motion_sensitivity,
+      split_enabled: $settings.split_enabled,
+      split_line: $settings.split_line,
+      split_feather: $settings.split_feather,
+      split_tilt: $settings.split_tilt,
+      sky_exposure_optimum: $settings.sky_exposure_optimum,
+      sky_highlight_protect: $settings.sky_highlight_protect,
+      sky_saturation_weight: $settings.sky_saturation_weight,
     }
   }
 
@@ -247,10 +254,71 @@
     {/if}
   </div>
 
+  <!-- Sky / foreground split -->
+  <div class="section-wrap">
+    <button class="section-header" onclick={() => toggleSection('split')}>
+      <div class="header-left">
+        <span>Sky</span>
+        {#if $settings.split_enabled}
+          <span class="badge on">On</span>
+        {/if}
+      </div>
+      <svg class="chevron" class:open={openSection === 'split'} viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+        <path d="M1 1l4 4 4-4"/>
+      </svg>
+    </button>
+    {#if openSection === 'split'}
+    <div class="section-body">
+      <label class="toggle-row">
+        <input type="checkbox" bind:checked={$settings.split_enabled} />
+        <span>Blend the sky separately</span>
+      </label>
+      <span class="hint-text">
+        Blends twice, with a line between sky and foreground, like a graduated filter.
+        Fusion settings apply below the line; these apply above it.
+        {#if $mode === 'single'}Drag the line in the preview to place it.{/if}
+      </span>
+      {#if $settings.split_enabled}
+        <div class="field">
+          <label for="split-line">Line position <span class="val">{Math.round($settings.split_line * 100)}%</span></label>
+          <input id="split-line" type="range" min="0.05" max="0.95" step="0.01" bind:value={$settings.split_line} />
+        </div>
+        <div class="field">
+          <label for="split-feather">Feather <span class="val">{Math.round($settings.split_feather * 100)}%</span></label>
+          <input id="split-feather" type="range" min="0" max="0.5" step="0.01" bind:value={$settings.split_feather} />
+          <span class="hint-text">How gradual the change is. Use more where trees or rocks cross the horizon.</span>
+        </div>
+        <div class="field">
+          <label for="split-tilt">Tilt <span class="val">{$settings.split_tilt}°</span></label>
+          <input id="split-tilt" type="range" min="-20" max="20" step="0.5" bind:value={$settings.split_tilt} />
+        </div>
+        <div class="field">
+          <label for="sky-optimum">Sky brightness target <span class="val">{formatSliderValue('sky_exposure_optimum')}</span></label>
+          <input id="sky-optimum" type="range" min="0.3" max="0.7" step="0.01" bind:value={$settings.sky_exposure_optimum} />
+          <span class="hint-text">Lower favours the darker frames, for deeper sunset colour.</span>
+        </div>
+        <div class="field">
+          <label for="sky-highlights">Sky highlight protection <span class="val">{$settings.sky_highlight_protect}%</span></label>
+          <input id="sky-highlights" type="range" min="0" max="20" step="1" bind:value={$settings.sky_highlight_protect} />
+        </div>
+        <div class="field">
+          <label for="sky-saturation">Sky saturation weight <span class="val">{formatSliderValue('sky_saturation_weight')}</span></label>
+          <input id="sky-saturation" type="range" min="0" max="1" step="0.05" bind:value={$settings.sky_saturation_weight} />
+        </div>
+      {/if}
+    </div>
+    {/if}
+  </div>
+
   <!-- Fusion -->
   <div class="section-wrap">
     <button class="section-header" onclick={() => toggleSection('fusion')}>
-      <span>Fusion</span>
+      <div class="header-left">
+        <span>Fusion</span>
+        {#if $settings.split_enabled}
+          <span class="badge">Foreground</span>
+        {/if}
+      </div>
       <svg class="chevron" class:open={openSection === 'fusion'} viewBox="0 0 10 6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
         <path d="M1 1l4 4 4-4"/>
       </svg>
@@ -599,6 +667,9 @@
   .run-wrap {
     padding: var(--space-4);
     margin-top: auto;
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-surface);
     border-top: 1px solid var(--border-subtle);
   }
 

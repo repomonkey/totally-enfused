@@ -19,6 +19,7 @@
   import ProgressBar from './lib/ProgressBar.svelte'
   import ToolStatus from './lib/ToolStatus.svelte'
   import BatchView from './lib/BatchView.svelte'
+  import SplitLine from './lib/SplitLine.svelte'
 
   let tools = $state(null)
   let resultPreviewData = $state('')
@@ -176,11 +177,16 @@
       {#if $mode === 'batch'}
         <BatchView />
       {:else}
-        <ComparisonSlider
-          beforeSrc={beforeSrc}
-          afterSrc={afterSrc}
-          label="Result"
-        />
+        <div class="stage">
+          <ComparisonSlider
+            beforeSrc={beforeSrc}
+            afterSrc={afterSrc}
+            label="Result"
+          />
+          {#if $settings.split_enabled && (afterSrc || beforeSrc)}
+            <SplitLine src={afterSrc || beforeSrc} />
+          {/if}
+        </div>
       {/if}
     </div>
 
@@ -304,6 +310,12 @@
     padding: var(--space-4);
     display: flex;
     flex-direction: column;
+  }
+
+  .stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
   }
 
   .filmstrip {

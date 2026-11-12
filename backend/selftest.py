@@ -2,7 +2,7 @@
 End-to-end check of the built app: `Totally Enfused --selftest`.
 
 Blends a small synthetic JPEG bracket with a moving square through the full
-pipeline (alignment, motion handling, enfuse, metadata). It catches what unit
+pipeline (alignment, motion handling, sky split, enfuse, metadata). It catches what unit
 tests in the dev environment can't: modules PyInstaller left out and tools the
 bundle can't run. release.sh runs it before notarising.
 """
@@ -27,7 +27,8 @@ def run() -> int:
             Image.fromarray((np.dstack([enc] * 3) * 255).astype(np.uint8)).save(p, quality=95)
             paths.append(str(p))
 
-        cfg = _pipeline_settings({"motion_enabled": True, "align_enabled": True})
+        cfg = _pipeline_settings({"motion_enabled": True, "align_enabled": True,
+                                   "split_enabled": True})     # two blends + merge
         stages = []
         out = run_pipeline(paths, str(Path(tmp) / "out.tif"), cfg,
                            lambda stage, pct, msg: stages.append(msg) if msg else None)
@@ -35,6 +36,9 @@ def run() -> int:
         print("\n".join(stages))
         if size == 0:
             print("SELFTEST FAILED: no output", file=sys.stderr)
+            return 1
+        if not any("Merging sky" in s for s in stages):
+            print("SELFTEST FAILED: sky split did not run", file=sys.stderr)
             return 1
         if not any("Finding movement" in s for s in stages):
             print("SELFTEST FAILED: motion handling did not run", file=sys.stderr)

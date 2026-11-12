@@ -42,6 +42,7 @@ a = Analysis(
         'imagecodecs._zlib',
         'imagecodecs._deflate',
         'imagecodecs._jpeg8',
+        'imagecodecs._png',             # 16-bit PNG output from the sky split
         'backend.selftest',
         # pyobjc (macOS)
         'AppKit',
@@ -99,8 +100,8 @@ app = BUNDLE(
         'NSHighResolutionCapable': True,
         'NSHumanReadableCopyright': '© 2026 Andy Hutchinson',
         'CFBundleDisplayName': 'Totally Enfused',
-        'CFBundleShortVersionString': '1.1.1',
-        'CFBundleVersion': '3',
+        'CFBundleShortVersionString': '1.2.0',
+        'CFBundleVersion': '4',
         # Releases: macOS 26 (the bundled Homebrew Python needs it). Local builds,
         # e.g. on Intel (see INTEL.md), set TE_MIN_MACOS to the build machine's version.
         'LSMinimumSystemVersion': os.environ.get('TE_MIN_MACOS', '26.0'),

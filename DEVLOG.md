@@ -25,6 +25,12 @@ The stack: Python backend (pywebview bridge + subprocess runners) with a Svelte 
 - Rewritten frames keep Hugin's XPosition/YPosition tags. Dropping them shifted frames by 10 pixels on the shared canvas.
 - Skipped when more than 60% of the image differs, which means alignment failed rather than things moving.
 
+### Sky / foreground split (1.2)
+- `backend/split.py`, off by default. When on, enfuse runs twice on the same aligned (and motion-handled) frames: once with the Fusion settings for the foreground, once with sky overrides (Brightness target, Highlight protection, Saturation weight). The two 16-bit TIFFs are merged with a smoothstep ramp across a line, then written as TIFF (LZW, ICC kept), JPEG or 16-bit PNG.
+- The line is stored as image fractions: height at the centre, feather as a fraction of image height, tilt in degrees. `SplitLine.svelte` draws it over the preview at the image's `object-fit: contain` rectangle using the same maths, so dragging it there sets exactly what the backend uses.
+- Requested by a user comparing with Luminar Aurora's graduated mask: exposure fusion averages a bright frame's pale sky into the dark frame's sunset colour, and one set of weights can't hold the sky down and lift the rocks at the same time. On his seascape, sky Brightness 0.35 / Highlight 15% / Saturation 0.6 against foreground Brightness 0.55 kept the clouds orange with the rocks lifted and no visible seam.
+- The release self-test runs with the split on, so a missing codec in the bundle fails the build.
+
 ### Blending and controls (1.1)
 - enfuse blends in CIELAB. Its default for files with an ICC profile (all of ours), CIELUV, left black and coloured specks at high-contrast edges: 6,425 on a JXL DNG seascape, 3 with CIELAB.
 - New controls: Brightness target (`--exposure-optimum`) and Highlight protection (`--exposure-cutoff`). Each slider has a line explaining what it really does; saturation weight, for one, selects colourful pixels rather than adding saturation.

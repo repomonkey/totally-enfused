@@ -17,6 +17,7 @@ from .align_runner import find_align_image_stack, align
 from .enfuse_runner import find_enfuse, blend
 from . import batch as batch_mod
 from . import deghost
+from . import split
 
 _window = None  # set by main.py after window creation
 
@@ -208,6 +209,16 @@ def _pipeline_settings(params: dict) -> dict:
         "motion_sensitivity": params.get("motion_sensitivity", 0.5),
         # Index into input_paths; None = the frame nearest 0 EV
         "reference_index": params.get("reference_index"),
+        # Sky / foreground split: the sky gets its own blend with these overrides
+        "split_enabled": params.get("split_enabled", False),
+        "split_line": params.get("split_line", 0.5),
+        "split_feather": params.get("split_feather", 0.2),
+        "split_tilt": params.get("split_tilt", 0.0),
+        "sky_blend": dict(
+            exposure_optimum=params.get("sky_exposure_optimum", 0.42),
+            highlight_protect=params.get("sky_highlight_protect", 12),
+            saturation_weight=params.get("sky_saturation_weight", 0.5),
+        ),
     }
 
 
@@ -272,15 +283,34 @@ def run_pipeline(input_paths: list[str], output_path: str, cfg: dict, report) ->
 
         blend_start = align_start + (40 if cfg["align_enabled"] else 0)
         blend_scale = 100 - blend_start
-        report("blend", blend_start, "Blending images…")
-        result_path = blend(
-            input_paths=enfuse_inputs,
-            output_path=output_path,
-            progress_callback=lambda pct, msg: report(
-                None, blend_start + max(0, pct) / 100 * blend_scale if pct >= 0 else -1, msg),
-            on_process=_track,
-            **cfg["blend"],
-        )
+
+        def run_blend(out, settings, start, scale):
+            return blend(
+                input_paths=enfuse_inputs,
+                output_path=out,
+                progress_callback=lambda pct, msg: report(
+                    None, start + max(0, pct) / 100 * scale if pct >= 0 else -1, msg),
+                on_process=_track,
+                **settings,
+            )
+
+        split_icc = None
+        if cfg["split_enabled"]:
+            half = blend_scale / 2
+            report("blend", blend_start, "Blending the foreground…")
+            fg = run_blend(os.path.join(tmp_dir, "foreground.tif"), cfg["blend"], blend_start, half)
+            _check_cancel()
+            report(None, blend_start + half, "Blending the sky…")
+            sky = run_blend(os.path.join(tmp_dir, "sky.tif"), {**cfg["blend"], **cfg["sky_blend"]},
+                            blend_start + half, half)
+            _check_cancel()
+            report(None, 98, "Merging sky and foreground…")
+            split_icc = split.merge(fg, sky, output_path, cfg["split_line"], cfg["split_feather"],
+                                    cfg["split_tilt"], cfg["blend"]["jpeg_quality"])
+            result_path = output_path
+        else:
+            report("blend", blend_start, "Blending images…")
+            result_path = run_blend(output_path, cfg["blend"], blend_start, blend_scale)
         _check_cancel()
 
         report(None, 99, "Copying metadata…")
@@ -288,6 +318,9 @@ def run_pipeline(input_paths: list[str], output_path: str, cfg: dict, report) ->
         if has_raw:
             icc_path = os.path.join(tmp_dir, "sRGB.icc")
             Path(icc_path).write_bytes(image_utils.srgb_icc_bytes())
+        elif split_icc and Path(output_path).suffix.lower() == ".png":
+            icc_path = os.path.join(tmp_dir, "blend.icc")   # the PNG writer can't embed it
+            Path(icc_path).write_bytes(split_icc)
         image_utils.copy_metadata(image_utils.reference_exposure(input_paths), result_path, icc_path)
         return result_path
 

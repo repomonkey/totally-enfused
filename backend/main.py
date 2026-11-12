@@ -8,6 +8,10 @@ from pathlib import Path
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
+if "--selftest" in sys.argv:
+    from backend.selftest import run
+    sys.exit(run())
+
 import webview
 from backend.api import API, set_window, _emit
 from backend import settings as settings_mod

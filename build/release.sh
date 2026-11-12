@@ -74,6 +74,9 @@ echo "==> Verifying signature"
 codesign --verify --deep --strict "$APP"
 spctl --assess --type exec "$APP" || true   # may fail before notarization — that's fine
 
+echo "==> Self-test: full pipeline with motion handling inside the signed app"
+"$APP/Contents/MacOS/Totally Enfused" --selftest
+
 echo "==> Creating zip for notarization"
 cd "$DIST"
 ditto -c -k --keepParent "Totally Enfused.app" TotallyEnfused_notarize.zip

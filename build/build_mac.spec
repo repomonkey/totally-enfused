@@ -35,6 +35,14 @@ a = Analysis(
         'PIL.PngImagePlugin',
         'rawpy',
         'piexif',
+        # tifffile loads these lazily by name, so PyInstaller misses them:
+        # LZW/PackBits/predictors (align_image_stack writes LZW TIFFs), deflate, JPEG
+        'imagecodecs._shared_cython',   # imported by every codec module
+        'imagecodecs._imcd',
+        'imagecodecs._zlib',
+        'imagecodecs._deflate',
+        'imagecodecs._jpeg8',
+        'backend.selftest',
         # pyobjc (macOS)
         'AppKit',
         'Foundation',
@@ -91,8 +99,8 @@ app = BUNDLE(
         'NSHighResolutionCapable': True,
         'NSHumanReadableCopyright': '© 2026 Andy Hutchinson',
         'CFBundleDisplayName': 'Totally Enfused',
-        'CFBundleShortVersionString': '1.1.0',
-        'CFBundleVersion': '2',
+        'CFBundleShortVersionString': '1.1.1',
+        'CFBundleVersion': '3',
         # Releases: macOS 26 (the bundled Homebrew Python needs it). Local builds,
         # e.g. on Intel (see INTEL.md), set TE_MIN_MACOS to the build machine's version.
         'LSMinimumSystemVersion': os.environ.get('TE_MIN_MACOS', '26.0'),
